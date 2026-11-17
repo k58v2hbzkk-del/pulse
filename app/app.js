@@ -99,7 +99,11 @@ async function load() {
     return;
   }
   const pks = MARKET_IDS.map(P.marketPda);
-  const infos = await conn.getMultipleAccountsInfo([...pks, ...pks.map(P.historyPda), ...pks.map(P.indexPda)]);
+  // Solana allows 100 accounts per call, so fetch in chunks
+  const all = [...pks, ...pks.map(P.historyPda), ...pks.map(P.indexPda)];
+  const chunks = [];
+  for (let i = 0; i < all.length; i += 90) chunks.push(all.slice(i, i + 90));
+  const infos = (await Promise.all(chunks.map((c) => conn.getMultipleAccountsInfo(c)))).flat();
   const markets = [];
   pks.forEach((pk, i) => {
     const mi = infos[i], hi = infos[i + pks.length], xi = infos[i + 2 * pks.length];
