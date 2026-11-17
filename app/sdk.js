@@ -28,6 +28,7 @@ const IX = {
   accept_duel: [80, 52, 90, 135, 172, 221, 175, 102],
   cancel_duel: [83, 124, 224, 237, 235, 44, 38, 57],
   settle_duel: [148, 90, 251, 130, 217, 144, 190, 239],
+  post_message: [214, 50, 100, 209, 38, 34, 7, 76],
 };
 export const ACCT = {
   Config: [155, 12, 170, 224, 30, 250, 204, 130],
@@ -134,12 +135,47 @@ export const settleIx = (market, owner) =>
 // ------------------------------------------------------------ DUEL mode
 const i64 = (v) => { const b = Buffer.alloc(8); b.writeBigInt64LE(BigInt(v)); return b; };
 /** "reading will be ABOVE/BELOW target at deadline (unix s)", stake in lamports */
-export function createDuelIx(creator, market, { nonce, above, target, deadline, stake }) {
+/** codeHash: 32 bytes (all zeros = public duel) */
+export function createDuelIx(creator, market, { nonce, above, target, deadline, stake, codeHash = new Uint8Array(32) }) {
   return ix([w(creator, true), r(market), w(duelPda(market, creator, nonce)), r(SystemProgram.programId)],
-    data("create_duel", u64(nonce), u8(above ? 1 : 0), u64(target), i64(deadline), u64(stake)));
+    data("create_duel", u64(nonce), u8(above ? 1 : 0), u64(target), i64(deadline), u64(stake), Buffer.from(codeHash)));
 }
-export const acceptDuelIx = (opponent, duel) =>
-  ix([w(opponent, true), w(duel), r(SystemProgram.programId)], data("accept_duel"));
+export const acceptDuelIx = (opponent, duel, code = "") =>
+  ix([w(opponent, true), w(duel), r(SystemProgram.programId)], data("accept_duel", str(code)));
+
+/** sha256(duel address ‖ code), matching the program's check */
+export async function joinCodeHash(duelPk, code) {
+  const bytes = new Uint8Array([...duelPk.toBytes(), ...new TextEncoder().encode(code)]);
+  return new Uint8Array(await globalThis.crypto.subtle.digest("SHA-256", bytes));
+}
+/** Join code shown to users: first 6 chars of the duel address + a 6-char secret */
+export const makeSecret = () => Array.from(globalThis.crypto.getRandomValues(new Uint8Array(6)), (b) => "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"[b % 32]).join("");
+
+// ------------------------------------------------------------ on-chain chat
+export const chatRoom = (target) => pda([Buffer.from("chat"), target.toBuffer()]);
+export const postMessageIx = (author, target, text) =>
+  ix([r(author, true), r(chatRoom(target))], data("post_message", target.toBuffer(), str(text)));
+/** Latest messages in a room, oldest first: [{author, text, time, sig}] */
+export async function fetchChat(conn, target, limit = 25) {
+  const sigs = await conn.getSignaturesForAddress(chatRoom(target), { limit });
+  if (!sigs.length) return [];
+  const txs = await conn.getTransactions(sigs.map((x) => x.signature), { maxSupportedTransactionVersion: 0 });
+  const disc = IX.post_message;
+  const out = [];
+  txs.forEach((tx, i) => {
+    if (!tx || tx.meta?.err) return;
+    const msg = tx.transaction.message;
+    const keys = msg.staticAccountKeys || msg.accountKeys;
+    for (const ci of msg.compiledInstructions) {
+      if (!keys[ci.programIdIndex].equals(PROGRAM_ID)) continue;
+      const d = Buffer.from(ci.data);
+      if (!disc.every((b, j) => d[j] === b)) continue;
+      const len = d.readUInt32LE(40);
+      out.push({ author: keys[ci.accountKeyIndexes[0]], text: d.subarray(44, 44 + len).toString("utf8"), time: tx.blockTime || sigs[i].blockTime, sig: sigs[i].signature });
+    }
+  });
+  return out.sort((a, b) => a.time - b.time);
+}
 export const cancelDuelIx = (creator, duel) => ix([w(creator, true), w(duel)], data("cancel_duel"));
 /** permissionless; for an unaccepted duel pass the creator as opponent */
 export const settleDuelIx = (duel, market, creator, opponent) =>
@@ -153,6 +189,8 @@ export function decodeDuel(buf) {
     nonce: rd64(dv, 136), stake: rd64(dv, 144), target: rd64(dv, 152), settledValue: rd64(dv, 160),
     deadline: Number(dv.getBigInt64(168, true)), created: Number(dv.getBigInt64(176, true)),
     above: buf[184] === 1, state: buf[185],
+    codeHash: Uint8Array.from(buf.subarray(187, 219)),
+    private: buf.subarray(187, 219).some((b) => b !== 0),
   };
 }
 

@@ -266,7 +266,7 @@ pub mod pulse {
     // ------------------------------------------------------------ DUEL mode
     /// Challenge anyone: "the reading will be ABOVE/BELOW `target` at `deadline`".
     /// Your stake is locked in the duel account until someone accepts or you cancel.
-    pub fn create_duel(ctx: Context<CreateDuel>, nonce: u64, above: bool, target: u64, deadline: i64, stake: u64) -> Result<()> {
+    pub fn create_duel(ctx: Context<CreateDuel>, nonce: u64, above: bool, target: u64, deadline: i64, stake: u64, code_hash: [u8; 32]) -> Result<()> {
         let now = Clock::get()?.unix_timestamp;
         require!(stake >= DUEL_MIN_STAKE, PulseError::TooSmall);
         require!(target > 0, PulseError::BadParam);
@@ -283,6 +283,7 @@ pub mod pulse {
         d.above = above;
         d.state = DUEL_OPEN;
         d.bump = ctx.bumps.duel;
+        d.code_hash = code_hash;
         anchor_lang::system_program::transfer(
             CpiContext::new(ctx.accounts.system_program.to_account_info(),
                 anchor_lang::system_program::Transfer { from: ctx.accounts.creator.to_account_info(), to: d.to_account_info() }),
@@ -291,9 +292,15 @@ pub mod pulse {
     }
 
     /// Take the other side by matching the stake. Closes 10 minutes before the deadline.
-    pub fn accept_duel(ctx: Context<AcceptDuel>) -> Result<()> {
+    /// `code` is required for private duels (empty for public ones).
+    pub fn accept_duel(ctx: Context<AcceptDuel>, code: String) -> Result<()> {
         let now = Clock::get()?.unix_timestamp;
+        let key = ctx.accounts.duel.key();
         let d = &mut ctx.accounts.duel;
+        if d.code_hash != [0u8; 32] {
+            let h = anchor_lang::solana_program::hash::hashv(&[key.as_ref(), code.as_bytes()]).to_bytes();
+            require!(h == d.code_hash, PulseError::WrongCode);
+        }
         require!(d.state == DUEL_OPEN, PulseError::DuelNotOpen);
         require!(now <= d.deadline - 600, PulseError::BadDeadline);
         require_keys_neq!(ctx.accounts.opponent.key(), d.creator, PulseError::BadParam);
@@ -366,6 +373,16 @@ pub mod pulse {
                 if r == DuelResult::Creator { ctx.accounts.creator.add_lamports(pot - fee)?; } else { ctx.accounts.opponent.add_lamports(pot - fee)?; }
             }
         }
+        Ok(())
+    }
+
+    /// On-chain chat: a message in the room of a duel or market (`target`).
+    /// The room is a PDA address that never needs to exist; readers list its transactions.
+    pub fn post_message(ctx: Context<PostMessage>, target: Pubkey, text: String) -> Result<()> {
+        require!(!text.trim().is_empty() && text.len() <= 280, PulseError::BadParam);
+        let (room, _) = Pubkey::find_program_address(&[b"chat", target.as_ref()], ctx.program_id);
+        require_keys_eq!(room, ctx.accounts.room.key(), PulseError::BadParam);
+        emit!(ChatMessage { target, author: ctx.accounts.author.key(), text });
         Ok(())
     }
 
@@ -715,6 +732,8 @@ pub struct Duel {
     pub above: bool,
     pub state: u8,
     pub bump: u8,
+    /// sha256(duel address ‖ join code) for private duels; all zeros = public
+    pub code_hash: [u8; 32],
 }
 
 #[derive(Accounts)]
@@ -762,6 +781,20 @@ pub struct SettleDuel<'info> {
     pub opponent: UncheckedAccount<'info>,
 }
 
+#[derive(Accounts)]
+pub struct PostMessage<'info> {
+    pub author: Signer<'info>,
+    /// CHECK: chat room address (PDA of ["chat", target]); only referenced so readers can find the message
+    pub room: UncheckedAccount<'info>,
+}
+
+#[event]
+pub struct ChatMessage {
+    pub target: Pubkey,
+    pub author: Pubkey,
+    pub text: String,
+}
+
 #[event]
 pub struct PricePushed {
     pub market: Pubkey,
@@ -803,6 +836,8 @@ pub enum PulseError {
     DuelNotOpen,
     #[msg("Too early")]
     TooEarly,
+    #[msg("Wrong join code")]
+    WrongCode,
 }
 
 #[cfg(test)]
@@ -852,10 +887,14 @@ mod duel_layout_dump {
     #[test]
     fn dump_duel() {
         let k = |n: u8| Pubkey::new_from_array([n; 32]);
-        let d = Duel { market: k(1), creator: k(2), opponent: k(3), winner: k(4), nonce: 5, stake: 6, target: 7, settled_value: 8, deadline: -9, created: 10, above: true, state: 2, bump: 254 };
+        let d = Duel { market: k(1), creator: k(2), opponent: k(3), winner: k(4), nonce: 5, stake: 6, target: 7, settled_value: 8, deadline: -9, created: 10, above: true, state: 2, bump: 254, code_hash: [9u8; 32] };
         let mut b = vec![]; d.try_serialize(&mut b).unwrap();
-        let cd = instruction::CreateDuel { nonce: 77, above: true, target: 600_000, deadline: 1_800_000_000, stake: 10_000_000 }.data();
+        let cd = instruction::CreateDuel { nonce: 77, above: true, target: 600_000, deadline: 1_800_000_000, stake: 10_000_000, code_hash: [9u8; 32] }.data();
+        let ad = instruction::AcceptDuel { code: "AB12CD34EF".into() }.data();
+        let pm = instruction::PostMessage { target: k(5), text: "gm".into() }.data();
+        let key = k(6);
+        let ch = anchor_lang::solana_program::hash::hashv(&[key.as_ref(), b"AB12CD34EF"]).to_bytes();
         let hex = |v: &[u8]| v.iter().map(|x| format!("{x:02x}")).collect::<String>();
-        std::fs::write("/tmp/duel_layout.json", format!(r#"{{"duel":"{}","create":"{}"}}"#, hex(&b), hex(&cd))).unwrap();
+        std::fs::write("/tmp/duel_layout.json", format!(r#"{{"duel":"{}","create":"{}","accept":"{}","post":"{}","codehash":"{}"}}"#, hex(&b), hex(&cd), hex(&ad), hex(&pm), hex(&ch))).unwrap();
     }
 }

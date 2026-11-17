@@ -80,8 +80,8 @@ async function load() {
     const now = Math.floor(Date.now() / 1000);
     const fake = (n) => new PublicKey(new Uint8Array(32).fill(n));
     state.duels = [
-      { pk: fake(41), d: { market: state.markets[0].pk, creator: fake(7), opponent: PublicKey.default, winner: PublicKey.default, stake: 100000000n, target: 600000n, settledValue: 0n, deadline: now + 20 * 3600, created: now, above: true, state: 0 } },
-      { pk: fake(42), d: { market: state.markets[3].pk, creator: fake(8), opponent: PublicKey.default, winner: PublicKey.default, stake: 500000000n, target: 25000n, settledValue: 0n, deadline: now + 3 * 86400, created: now - 60, above: false, state: 0 } },
+      { pk: fake(41), d: { market: state.markets[0].pk, creator: fake(7), opponent: PublicKey.default, winner: PublicKey.default, stake: 100000000n, target: 600000n, settledValue: 0n, deadline: now + 20 * 3600, created: now, above: true, state: 0, private: false } },
+      { pk: fake(42), d: { market: state.markets[3].pk, creator: fake(8), opponent: PublicKey.default, winner: PublicKey.default, stake: 500000000n, target: 25000n, settledValue: 0n, deadline: now + 3 * 86400, created: now - 60, above: false, state: 0, private: false } },
     ];
     $("banner").hidden = false;
     $("banner").innerHTML = "PREVIEW MODE — sample data for design review, not live markets.";
@@ -102,6 +102,9 @@ async function load() {
     $("banner").innerHTML = 'Markets are launching. Check back in a few minutes. <a href="?demo">See a preview</a>';
   } else $("banner").hidden = true;
 
+  if (!state.house) {
+    try { const ci = await conn.getAccountInfo(P.configPda()); if (ci) state.house = P.decodeConfig(ci.data).keeper; } catch {}
+  }
   try {
     const raw = await conn.getProgramAccounts(P.PROGRAM_ID, { filters: [{ memcmp: { offset: 0, bytes: b58(Uint8Array.from(P.ACCT.Duel)) } }] });
     state.duels = raw.map(({ pubkey, account }) => ({ pk: pubkey, d: P.decodeDuel(account.data) })).sort((a, b) => b.d.created - a.d.created);
@@ -237,7 +240,9 @@ function renderSheet() {
     ${yours}
     ${action}
     <p class="hint"><b style="color:var(--brand2)">Always someone on the other side.</b> When a market is one-sided, the PULSE Backstop matches your trade (up to 0.5 SOL per market), so you can win even when nobody else is online.</p>
-    <p class="hint">You can't lose more than the SOL you put in. Winners are paid from the other side's pool.</p>`;
+    <p class="hint">You can't lose more than the SOL you put in. Winners are paid from the other side's pool.</p>
+    <div class="lbl" style="margin-top:16px">Market chat</div>
+    ${chatBox(x.pk.toBase58())}`;
   const bind = (id, fn) => { const el = $(id); if (el) el.onclick = fn; };
   bind("sConnect", connect);
   bind("faucet", () => run(faucet, true));
@@ -246,19 +251,51 @@ function renderSheet() {
   bind("closeL", () => run(() => closeSide(x, 0)));
   bind("closeS", () => run(() => closeSide(x, 1)));
   document.querySelectorAll(".chips button").forEach((b) => (b.onclick = () => ($("amt").value = b.dataset.v)));
+  bindChat();
 }
 
-function openSheet(id) { openId = id; $("sheet").classList.add("open"); renderSheet(); }
+function openSheet(id) {
+  openId = id; $("sheet").classList.add("open"); renderSheet();
+  const x = state.markets.find((y) => y.m.id === id);
+  if (x && !DEMO) loadChat(x.pk.toBase58()).then(() => openId === id && renderSheet());
+}
 $("sheet").onclick = (e) => { if (e.target.id === "sheet") { openId = null; $("sheet").classList.remove("open"); } };
 document.querySelectorAll("#seg button").forEach((b) => (b.onclick = () => { tab = b.dataset.tab; render(); }));
 $("newDuel").onclick = () => openDuelSheet();
+$("joinBtn").onclick = () => joinWithCode();
 
 // ------------------------------------------------------------ duels
 const short = (pk) => `${pk.toBase58().slice(0, 4)}…${pk.toBase58().slice(-4)}`;
 const when = (ts) => new Date(ts * 1000).toLocaleString([], { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
 const mkOf = (pk) => state.markets.find((x) => x.pk.equals(pk));
-let duelDraft = null; // { mk, above, target, hours, stake }
+let duelDraft = null; // { id, above, target, hours, stake, priv }
 let focusDuel = new URLSearchParams(location.search).get("duel");
+const codes = {}; // duel address -> join secret the user knows
+try { Object.assign(codes, JSON.parse(localStorage.getItem("pulse_codes") || "{}")); } catch {}
+const saveCodes = () => { try { localStorage.setItem("pulse_codes", JSON.stringify(codes)); } catch {} };
+{ const q = new URLSearchParams(location.search); if (q.get("duel") && q.get("code")) { codes[q.get("duel")] = q.get("code"); saveCodes(); } }
+let chatOpen = null;           // target address whose chat is open
+const chatCache = {};          // target -> messages
+async function loadChat(targetStr) {
+  try { chatCache[targetStr] = await P.fetchChat(conn, new PublicKey(targetStr), 25); } catch (e) { console.warn("chat", e); chatCache[targetStr] = chatCache[targetStr] || []; }
+}
+function chatBox(targetStr) {
+  const msgs = chatCache[targetStr];
+  const me = wallet?.publicKey?.toBase58();
+  const list = !msgs ? `<div class="hint">Loading chat…</div>` : !msgs.length ? `<div class="hint">No messages yet. Say something.</div>`
+    : msgs.map((m) => `<div class="msg ${m.author.toBase58() === me ? "me" : ""}"><span>${m.author.toBase58() === me ? "you" : short(m.author)}</span>${esc(m.text)}</div>`).join("");
+  return `<div class="chat" data-room="${targetStr}"><div class="msgs">${list}</div>
+    ${wallet ? `<div class="send"><input maxlength="280" placeholder="Talk your talk…" data-chatin="${targetStr}"/><button class="btn sm" data-chatsend="${targetStr}">Send</button></div>` : `<div class="hint">Connect your wallet to chat.</div>`}</div>`;
+}
+const esc = (t) => t.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
+function bindChat() {
+  document.querySelectorAll("[data-chatsend]").forEach((b) => (b.onclick = () => {
+    const t = b.dataset.chatsend; const inp = document.querySelector(`[data-chatin="${t}"]`);
+    const text = inp.value.trim(); if (!text) return;
+    run(async () => { const sig = await sendTx([P.postMessageIx(wallet.publicKey, new PublicKey(t), text)]); inp.value = ""; await loadChat(t); return sig; });
+  }));
+  document.querySelectorAll(".chat .msgs").forEach((el) => (el.scrollTop = el.scrollHeight));
+}
 
 function duelCard(item, mine) {
   const { pk, d } = item;
@@ -274,35 +311,62 @@ function duelCard(item, mine) {
   if (d.state === 2) { const won = me && d.winner.equals(me); status = `<span class="tag" style="background:${won ? "#10291c" : "#2a1416"};color:${won ? "var(--up)" : "var(--down)"}">${won ? "you won" : mine ? "you lost" : "settled"} · ${fmtN(d.settledValue)}</span>`; }
   if (d.state === 3) status = `<span class="tag" style="background:#2a2a2a">refunded</span>`;
   const btns = [];
-  if (d.state === 0 && now < d.deadline - 600 && !isCreator) btns.push(`<button class="btn sm" data-accept="${pk.toBase58()}">Take the other side · ${P.fmtSol(d.stake)} SOL</button>`);
+  if (d.state === 0 && now < d.deadline - 600 && !isCreator && (!d.private || codes[pk.toBase58()])) btns.push(`<button class="btn sm" data-accept="${pk.toBase58()}">Take the other side · ${P.fmtSol(d.stake)} SOL</button>`);
   if (d.state === 0 && isCreator) btns.push(`<button class="btn ghost sm" data-cancel="${pk.toBase58()}">Cancel</button>`);
   if (d.state === 0 && isCreator) btns.push(`<button class="btn ghost sm" data-share="${pk.toBase58()}">Share challenge</button>`);
+  btns.push(`<button class="btn ghost sm" data-chat="${pk.toBase58()}">${chatOpen === pk.toBase58() ? "Hide chat" : "Chat"}</button>`);
+  const priv = d.private ? `<span class="tag" style="background:#1d1630;color:#c8b6ff">private${isCreator && codes[pk.toBase58()] ? " · code " + pk.toBase58().slice(0, 6) + "-" + codes[pk.toBase58()] : ""}</span>` : "";
   const side = isOpp ? `<span class="tag" style="background:#2a2a2a">you said ${d.above ? "BELOW" : "ABOVE"}</span>` : "";
   return `<div class="duel" style="${focusDuel === pk.toBase58() ? "border-color:var(--brand)" : ""}">
-    <div class="claim"><span class="muted">${isCreator ? "You" : short(d.creator)} say${isCreator ? "" : "s"}</span> <b>${name}</b> will be <b style="color:${d.above ? "var(--up)" : "var(--down)"}">${d.above ? "ABOVE" : "BELOW"} ${fmtN(d.target)}</b> <span class="muted">${unit}</span> at <b>${when(d.deadline)}</b></div>
+    <div class="claim"><span class="muted">${isCreator ? "You" : state.house && d.creator.equals(state.house) ? "🏠 PULSE House" : short(d.creator)} say${isCreator ? "" : "s"}</span> <b>${name}</b> will be <b style="color:${d.above ? "var(--up)" : "var(--down)"}">${d.above ? "ABOVE" : "BELOW"} ${fmtN(d.target)}</b> <span class="muted">${unit}</span> at <b>${when(d.deadline)}</b></div>
     <div class="meta"><span>stake ${P.fmtSol(d.stake)} SOL each</span><span>pot ${P.fmtSol(d.stake * 2n)} SOL</span>${x ? `<span>now ${fmtN(livePlayers(x))}</span>` : ""}</div>
-    <div class="row2">${status}${side}</div>
+    <div class="row2">${status}${priv}${side}</div>
     ${btns.length ? `<div class="row2">${btns.join("")}</div>` : ""}
+    ${chatOpen === pk.toBase58() ? chatBox(pk.toBase58()) : ""}
   </div>`;
 }
 
 function renderDuels() {
   const now = Date.now() / 1000;
   const me = wallet?.publicKey;
-  const open = state.duels.filter((x) => x.d.state === 0 && now < x.d.deadline - 600 && !(me && x.d.creator.equals(me)));
+  const open = state.duels.filter((x) => x.d.state === 0 && now < x.d.deadline - 600 && !(me && x.d.creator.equals(me)) && (!x.d.private || codes[x.pk.toBase58()]));
   if (focusDuel) open.sort((a, b) => (a.pk.toBase58() === focusDuel ? -1 : b.pk.toBase58() === focusDuel ? 1 : 0));
   const mine = me ? state.duels.filter((x) => x.d.creator.equals(me) || x.d.opponent.equals(me)) : [];
   $("openDuels").innerHTML = open.length ? open.map((x) => duelCard(x, false)).join("") : `<div class="empty">No open challenges right now. Start one and share the link.</div>`;
+  const board = new Map();
+  for (const { d } of state.duels) {
+    if (d.state !== 2 || d.winner.equals(PublicKey.default)) continue;
+    const k = d.winner.toBase58(); const won = Number(d.stake) * 0.98 / 1e9; // pot minus fee minus own stake
+    const e = board.get(k) || { w: d.winner, wins: 0, sol: 0 }; e.wins++; e.sol += won; board.set(k, e);
+  }
+  const top = [...board.values()].sort((a, b) => b.sol - a.sol).slice(0, 5);
+  $("board").innerHTML = top.length ? top.map((e, i) => `<div class="lrow"><b>${i + 1}</b><span>${me && e.w.equals(me) ? "you" : state.house && e.w.equals(state.house) ? "🏠 PULSE House" : short(e.w)}</span><span class="muted">${e.wins} win${e.wins > 1 ? "s" : ""}</span><span class="up">+${e.sol.toFixed(3)} SOL</span></div>`).join("")
+    : `<div class="empty">No duels settled yet. Win the first one and take #1.</div>`;
   $("myDuels").innerHTML = !me ? `<div class="empty">Connect your wallet to see your duels.</div>` : mine.length ? mine.map((x) => duelCard(x, true)).join("") : `<div class="empty">You haven't joined a duel yet.</div>`;
   document.querySelectorAll("[data-accept]").forEach((b) => (b.onclick = () => run(() => acceptDuel(b.dataset.accept))));
   document.querySelectorAll("[data-cancel]").forEach((b) => (b.onclick = () => run(() => cancelDuel(b.dataset.cancel))));
   document.querySelectorAll("[data-share]").forEach((b) => (b.onclick = () => shareDuel(b.dataset.share)));
+  document.querySelectorAll("[data-chat]").forEach((b) => (b.onclick = async () => {
+    const t = b.dataset.chat; chatOpen = chatOpen === t ? null : t; renderDuels();
+    if (chatOpen) { await loadChat(t); renderDuels(); }
+  }));
+  bindChat();
+}
+function joinWithCode() {
+  const raw = ($("joinCode").value || "").trim().replace(/\s/g, "");
+  const [prefix, secret] = raw.split("-");
+  if (!prefix || !secret) return toast("Codes look like 7Hk2Pq-X9F3KD");
+  const hit = state.duels.find((x) => x.pk.toBase58().startsWith(prefix) && x.d.private);
+  if (!hit) return toast("No private duel found for that code. Check it, or wait a few seconds and try again.");
+  codes[hit.pk.toBase58()] = secret.toUpperCase(); saveCodes();
+  focusDuel = hit.pk.toBase58(); tab = "duels"; render();
+  toast("Found it. Tap Take the other side to join.");
 }
 
 function openDuelSheet() {
   if (!state.markets.length) return toast("Markets are still loading.");
   const x = state.markets[0];
-  duelDraft = duelDraft || { id: x.m.id, above: true, target: Number(livePlayers(x)), hours: 24, stake: 0.1 };
+  duelDraft = duelDraft || { id: x.m.id, above: true, target: Number(livePlayers(x)), hours: 24, stake: 0.1, priv: false };
   openId = null;
   $("sheet").classList.add("open");
   renderDuelSheet();
@@ -321,6 +385,8 @@ function renderDuelSheet() {
     <div class="amt"><input id="dTarget" inputmode="numeric" value="${dd.target}" aria-label="Target number" /></div>
     <div class="lbl">When</div>
     <div class="opt">${[[1, "1 hour"], [6, "6 hours"], [24, "24 hours"], [72, "3 days"], [168, "7 days"]].map(([h, l]) => `<button data-h="${h}" class="${dd.hours === h ? "on" : ""}">${l}</button>`).join("")}</div>
+    <div class="lbl">Who can join</div>
+    <div class="opt"><button data-pv="0" class="${!dd.priv ? "on" : ""}">Anyone (public)</button><button data-pv="1" class="${dd.priv ? "on" : ""}">Friends with code (private)</button></div>
     <div class="lbl">Stake (each side)</div>
     <div class="opt">${[0.05, 0.1, 0.5, 1].map((v) => `<button data-st="${v}" class="${dd.stake === v ? "on" : ""}">${v} SOL</button>`).join("")}</div>
     ${wallet ? `<button class="btn" id="dCreate" style="width:100%;justify-content:center;padding:15px">Lock ${dd.stake} SOL and create duel</button>` : `<button class="btn" id="sConnect" style="width:100%;justify-content:center;padding:15px">Connect wallet</button>`}
@@ -330,6 +396,7 @@ function renderDuelSheet() {
   document.querySelectorAll("[data-dir]").forEach((b) => (b.onclick = () => { save(); dd.above = b.dataset.dir === "1"; renderDuelSheet(); }));
   document.querySelectorAll("[data-h]").forEach((b) => (b.onclick = () => { save(); dd.hours = Number(b.dataset.h); renderDuelSheet(); }));
   document.querySelectorAll("[data-st]").forEach((b) => (b.onclick = () => { save(); dd.stake = Number(b.dataset.st); renderDuelSheet(); }));
+  document.querySelectorAll("[data-pv]").forEach((b) => (b.onclick = () => { save(); dd.priv = b.dataset.pv === "1"; renderDuelSheet(); }));
   if ($("sConnect")) $("sConnect").onclick = connect;
   if ($("dCreate")) $("dCreate").onclick = () => { save(); run(() => createDuel(x)); };
 }
@@ -339,21 +406,25 @@ async function createDuel(x) {
   if (dd.stake + 0.01 > state.sol) throw new Error("Not enough SOL. Tap Get free devnet SOL in any market");
   const nonce = BigInt(Date.now());
   const deadline = Math.floor(Date.now() / 1000) + dd.hours * 3600;
-  const sig = await sendTx([P.createDuelIx(wallet.publicKey, x.pk, { nonce, above: dd.above, target: BigInt(dd.target), deadline, stake: BigInt(Math.round(dd.stake * 1e9)) })]);
-  const pk = P.duelPda(x.pk, wallet.publicKey, nonce).toBase58();
+  const duelPk = P.duelPda(x.pk, wallet.publicKey, nonce);
+  let codeHash = new Uint8Array(32);
+  if (dd.priv) { const secret = P.makeSecret(); codes[duelPk.toBase58()] = secret; saveCodes(); codeHash = await P.joinCodeHash(duelPk, secret); }
+  const sig = await sendTx([P.createDuelIx(wallet.publicKey, x.pk, { nonce, above: dd.above, target: BigInt(dd.target), deadline, stake: BigInt(Math.round(dd.stake * 1e9)), codeHash })]);
+  const pk = duelPk.toBase58();
   $("sheet").classList.remove("open"); tab = "duels"; focusDuel = pk;
   setTimeout(() => shareDuel(pk), 600);
   return sig;
 }
-async function acceptDuel(pkStr) { return sendTx([P.acceptDuelIx(wallet.publicKey, new PublicKey(pkStr))]); }
+async function acceptDuel(pkStr) { return sendTx([P.acceptDuelIx(wallet.publicKey, new PublicKey(pkStr), codes[pkStr] || "")]); }
 async function cancelDuel(pkStr) { return sendTx([P.cancelDuelIx(wallet.publicKey, new PublicKey(pkStr))]); }
 function shareDuel(pkStr) {
   const item = state.duels.find((x) => x.pk.toBase58() === pkStr);
-  const url = `${location.origin}${location.pathname}?duel=${pkStr}`;
+  const url = `${location.origin}${location.pathname}?duel=${pkStr}${codes[pkStr] ? `&code=${codes[pkStr]}` : ""}`;
   const x = item && mkOf(item.d.market);
   const text = item && x ? `I'm calling ${x.m.name} ${item.d.above ? "ABOVE" : "BELOW"} ${fmtN(item.d.target)} ${unitOf(x)} by ${when(item.d.deadline)}. ${P.fmtSol(item.d.stake)} SOL says I'm right. Take the other side:` : "Take the other side of my PULSE duel:";
   navigator.clipboard?.writeText(url).catch(() => {});
-  toast(`Link copied. <a href="https://x.com/intent/post?text=${encodeURIComponent(text)}&url=${encodeURIComponent(url)}" target="_blank">Post it on X</a>`, 9000);
+  const code = codes[pkStr] ? ` Join code: <b>${pkStr.slice(0, 6)}-${codes[pkStr]}</b>.` : "";
+  toast(`Link copied.${code} <a href="https://x.com/intent/post?text=${encodeURIComponent(text)}&url=${encodeURIComponent(url)}" target="_blank">Post it on X</a>`, 9000);
 }
 
 // ------------------------------------------------------------ wallet + tx
@@ -466,5 +537,14 @@ async function refresh() {
 }
 refresh();
 setInterval(refresh, 15_000);
+setInterval(async () => {
+  if (DEMO) return;
+  const room = chatOpen || (openId != null && state.markets.find((y) => y.m.id === openId)?.pk.toBase58());
+  if (!room) return;
+  const typing = document.activeElement?.dataset?.chatin;
+  await loadChat(room);
+  if (typing) return; // don't wipe what someone is typing
+  if (chatOpen) renderDuels(); else renderSheet();
+}, 12_000);
 const p = provider();
 if (p?.isConnected && p.publicKey) wallet = { publicKey: new PublicKey(p.publicKey.toString()), provider: p };

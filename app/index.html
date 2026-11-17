@@ -101,6 +101,20 @@
   .opt button { padding: 9px 13px; border-radius: 10px; border: 1px solid var(--line); background: var(--card); color: var(--mute); font-size: 13px; font-weight: 600; }
   .opt button.on { border-color: var(--brand); color: var(--text); background: #1c1309; }
   .lbl { font-size: 12px; color: var(--mute); margin-top: 6px; }
+  .join { display: flex; gap: 8px; margin: 4px 0 6px; }
+  .join input, .send input { flex: 1; min-width: 0; background: var(--card); border: 1px solid var(--line); color: var(--text); border-radius: 12px; padding: 11px 12px; font-size: 14px; }
+  .join input:focus, .send input:focus { outline: none; border-color: var(--brand); }
+  .chat { border-top: 1px solid var(--line); padding-top: 10px; display: grid; gap: 8px; }
+  .msgs { max-height: 220px; overflow-y: auto; display: grid; gap: 6px; }
+  .msg { background: #101010; border: 1px solid var(--line); border-radius: 12px; padding: 8px 10px; font-size: 14px; line-height: 1.4; max-width: 88%; }
+  .msg span { display: block; font-family: var(--mono); font-size: 11px; color: var(--mute); margin-bottom: 2px; }
+  .msg.me { justify-self: end; border-color: #3d2a12; background: #1c1309; }
+  .send { display: flex; gap: 8px; }
+  .board { background: var(--card); border: 1px solid var(--line); border-radius: 18px; padding: 6px 14px; }
+  .lrow { display: grid; grid-template-columns: 24px 1fr auto auto; gap: 12px; align-items: center; padding: 10px 0; border-bottom: 1px solid var(--line); font-size: 14px; }
+  .lrow:last-child { border-bottom: 0; }
+  .lrow b { color: var(--brand); font-family: var(--mono); }
+  .lrow .up { font-family: var(--mono); }
   .feats { display: grid; gap: 14px; }
   @media (min-width: 760px) { .feats { grid-template-columns: repeat(2, 1fr); } }
   .feat { background: var(--card); border: 1px solid var(--line); border-radius: 22px; padding: 22px; }
@@ -188,8 +202,10 @@
     <div id="duelsTab" hidden>
       <div class="sh"><div><h2>Duels <span>1v1</span></h2><p class="muted" style="margin-top:6px">Call where a number lands. Someone takes the other side. The program pays the winner.</p></div>
         <button class="btn sm" id="newDuel">New duel</button></div>
+      <div class="join"><input id="joinCode" placeholder="Have a join code? e.g. 7Hk2Pq-X9F3KD" autocapitalize="characters" /><button class="btn ghost sm" id="joinBtn">Join</button></div>
       <h3 class="sub">Open challenges</h3><div class="dlist" id="openDuels"></div>
       <h3 class="sub">Your duels</h3><div class="dlist" id="myDuels"></div>
+      <h3 class="sub">Leaderboard · duel winners</h3><div class="board" id="board"></div>
     </div>
   </section>
 
@@ -222,7 +238,7 @@
       <details><summary>Where does the data come from? Can anyone fake it?</summary><p class="muted">A keeper reads Steam's public player-count API every minute and posts it on-chain. Cheating is pointless by design: the program caps how far any reading can move (15%), and you trade the 24-hour average, so one fake reading moves the price by about 0.01%. Faking a real move would take hours in public, and you can exit any time. A public auditor also checks every on-chain reading against Steam every hour (<a href="https://github.com/k58v2hbzkk-del/pulse/actions/workflows/audit.yml" target="_blank" rel="noopener" style="color:var(--brand2)">see the audit log</a>). The program is built to plug in a fully verified feed (zkTLS) for mainnet.</p></details>
       <details><summary>Why a 24-hour average?</summary><p class="muted">Every game peaks and dips at the same hours each day. If you traded the raw number, people could farm that predictable cycle. The program averages the last 24 hours on-chain, so the daily cycle cancels out and only real trends move the price: a game growing, dying, or blowing up at launch.</p></details>
       <details><summary>Who do I win from if nobody else is trading?</summary><p class="muted">The PULSE Backstop. It automatically takes the opposite side of one-sided markets (up to 0.5 SOL per market on devnet). On mainnet it becomes a vault anyone can deposit into to earn trading fees.</p></details>
-      <details><summary>How do duels work?</summary><p class="muted">Pick a market, call ABOVE or BELOW a number at a time you choose, and lock your SOL. Anyone can take the other side by matching your stake. After the deadline the program reads the first audited reading and pays the winner the whole pot (minus a 1% fee). Nobody accepts? You get your SOL back. Share the duel link to challenge a friend.</p></details>
+      <details><summary>How do duels work?</summary><p class="muted">Pick a market, call ABOVE or BELOW a number at a time you choose, and lock your SOL. Anyone can take the other side by matching your stake. After the deadline the program reads the first audited reading and pays the winner the whole pot (minus a 1% fee). Nobody accepts? You get your SOL back. Share the duel link to challenge a friend, or make it private: only people with your join code can take it. Every duel and market has its own on-chain chat.</p></details>
       <details><summary>What can I trade besides games?</summary><p class="muted">Live Steam player counts, Wikipedia daily views for big topics (Bitcoin, AI, Taylor Swift), GitHub star momentum for popular repos, and Twitch viewers by category.</p></details>
       <details><summary>Can I get liquidated?</summary><p class="muted">No. You hold a share of a pool. It shrinks when you're wrong, but it never goes below zero and nobody force-closes you.</p></details>
       <details><summary>What do I trade with?</summary><p class="muted">Not yet. PULSE runs on Solana devnet, so you trade with devnet SOL, which is free. Tap "Get free devnet SOL" inside any market.</p></details>

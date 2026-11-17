@@ -50,6 +50,10 @@ Program ID (devnet): `FEf5G58pDPipsFQJJzUTqHrnPkHaXqS2HABaU5Po9kTx`
 
 Call it: "Counter-Strike 2 will be ABOVE 600,000 players at Sunday 20:00", stake SOL, share the link. Anyone can take the other side by matching the stake. After the deadline anyone can settle: the program reads the first audited reading posted after the deadline (within 1 hour) and pays the winner the pot minus 1%. Unaccepted duels refund the creator; ties refund both; a duel with no usable reading for 3 days refunds both. The keeper settles every duel automatically.
 
+- **Private duels with join codes:** the creator stores `sha256(duel address ‖ code)`; only someone holding the code (e.g. `7Hk2Pq-X9F3KD`, shared in a group chat or link) can accept.
+- **On-chain chat:** every duel and market has a chat room. `post_message` emits the message in a transaction that references the room's PDA (`["chat", target]`), so the app reads a room's history straight from Solana. No server.
+- **Always something to do:** the keeper's House keeps 3 fresh public duels open at all times (small stakes, 3–24h), and a leaderboard ranks duel winners by SOL won.
+
 ## Launch markets
 
 | Market | Index | Leverage |

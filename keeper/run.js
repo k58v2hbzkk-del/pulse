@@ -5,7 +5,7 @@ import { readSource } from "./sources.js";
 import { sendWithUpdate, feedIdOf } from "./oracle.js";
 import {
   PROGRAM_ID, marketPda, positionPda, indexPda, quotePda, decodeIndex, pushPriceIx, setFeedIx, settleIx, openPositionIx, depositIx,
-  decodeMarket, decodePosition, sharePrice, valueOf, ACCT, decodeDuel, settleDuelIx,
+  decodeMarket, decodePosition, sharePrice, valueOf, ACCT, decodeDuel, settleDuelIx, createDuelIx,
 } from "../app/sdk.js";
 import { MARKETS } from "./markets.js";
 import bs58 from "bs58";
@@ -93,6 +93,42 @@ async function settleDuels() {
   }
 }
 
+// ------------------------------------------------------------ House duels
+// Keeps a few open challenges alive at all times, so there's always something to take.
+const HOUSE_OPEN = Number(process.env.HOUSE_DUELS || 3);
+const HOUSE_STAKE = sol("HOUSE_STAKE_SOL", 0.05);
+let lastHouse = 0;
+async function houseDuels() {
+  if (Date.now() - lastHouse < 10 * 60_000) return;
+  lastHouse = Date.now();
+  const now = Math.floor(Date.now() / 1000);
+  const list = await conn.getProgramAccounts(PROGRAM_ID, { filters: [{ memcmp: { offset: 0, bytes: bs58.encode(Uint8Array.from(ACCT.Duel)) } }, { memcmp: { offset: 40, bytes: keeper.publicKey.toBase58() } }] });
+  const open = list.map((x) => decodeDuel(x.account.data)).filter((d) => d.state === 0 && d.deadline - 600 > now);
+  let need = HOUSE_OPEN - open.length;
+  const live = [];
+  for (const m of MARKETS) {
+    const mk = marketPda(m.id);
+    const ii = await conn.getAccountInfo(indexPda(mk));
+    if (!ii) continue;
+    const idx = decodeIndex(ii.data);
+    if (idx.lastRaw > 0n && now - idx.lastTime < 600 && !open.some((d) => d.market.equals(mk))) live.push({ m, mk, raw: Number(idx.lastRaw) });
+  }
+  live.sort(() => Math.random() - 0.5);
+  for (const { m, mk, raw } of live) {
+    if (need <= 0) break;
+    const hours = [3, 6, 12, 24][Math.floor(Math.random() * 4)];
+    const above = Math.random() < 0.5;
+    // target a bit away from now, rounded so it reads well
+    const mag = 10 ** Math.max(0, Math.floor(Math.log10(raw)) - 2);
+    const target = Math.max(1, Math.round((raw * (above ? 1.02 : 0.98)) / mag) * mag);
+    try {
+      const sig = await send(keeper, createDuelIx(keeper.publicKey, mk, { nonce: BigInt(Date.now()), above, target: BigInt(target), deadline: now + hours * 3600, stake: HOUSE_STAKE }));
+      console.log(`  house duel: ${m.name} ${above ? "ABOVE" : "BELOW"} ${target} in ${hours}h`, sig);
+      need--;
+    } catch (e) { console.log("  house duel failed:", e.message?.slice(0, 160)); }
+  }
+}
+
 // ------------------------------------------------------------ Backstop
 // Takes the thin side so every trader always has a counterparty. Matches user flow
 // up to MM_MAX_PER_MARKET_SOL per market. Never holds both sides of a market.
@@ -146,6 +182,7 @@ while (Date.now() - started < RUN_FOR) {
     await pushAll();
     await settleFilled();
     await settleDuels();
+    await houseDuels();
     await backstop();
   } catch (e) {
     console.log("round error:", e.message);
