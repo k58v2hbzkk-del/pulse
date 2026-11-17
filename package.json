@@ -1,0 +1,20 @@
+{
+  "name": "pulse",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "PULSE - perpetual markets on internet attention (Solana)",
+  "scripts": {
+    "setup": "node keeper/setup.js",
+    "keeper": "node keeper/run.js",
+    "build": "mkdir -p dist && cp app/index.html dist/ && esbuild app/app.js --bundle --format=esm --platform=browser --minify --define:global=globalThis --outfile=dist/bundle.js"
+  },
+  "dependencies": {
+    "@solana/web3.js": "^1.98.0",
+    "bs58": "^6.0.0",
+    "buffer": "^6.0.3"
+  },
+  "devDependencies": {
+    "esbuild": "^0.28.2"
+  }
+}

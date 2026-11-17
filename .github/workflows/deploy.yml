@@ -1,0 +1,42 @@
+# Run from the Actions tab: builds the program, deploys it to devnet, then creates the markets.
+name: Deploy to devnet
+on:
+  workflow_dispatch:
+    inputs:
+      solana_version:
+        description: Solana CLI version
+        default: v2.1.21
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      RPC_URL: ${{ secrets.RPC_URL || 'https://api.devnet.solana.com' }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Solana CLI
+        run: |
+          sh -c "$(curl -sSfL https://release.anza.xyz/${{ inputs.solana_version }}/install)"
+          echo "$HOME/.local/share/solana/install/active_release/bin" >> $GITHUB_PATH
+      - name: Write keys
+        run: |
+          echo '${{ secrets.ADMIN_KEY }}' > admin.json
+          echo '${{ secrets.PROGRAM_KEY }}' > program.json
+          solana config set --url "$RPC_URL" --keypair admin.json
+          echo "Deployer: $(solana address)  balance: $(solana balance)"
+      - name: Build program
+        run: cargo build-sbf --manifest-path programs/pulse/Cargo.toml
+      - name: Deploy (needs ~3-5 devnet SOL on the deployer)
+        run: |
+          ls -la target/deploy/
+          solana airdrop 2 || echo "airdrop rate-limited; using existing balance"
+          solana program deploy target/deploy/pulse.so --program-id program.json --keypair admin.json --url "$RPC_URL"
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - name: Create config + markets
+        env:
+          ADMIN_KEY: ${{ secrets.ADMIN_KEY }}
+        run: npm ci && node keeper/setup.js
+      - name: Clean up keys
+        if: always()
+        run: rm -f admin.json program.json

@@ -1,0 +1,27 @@
+[package]
+name = "pulse"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.79"
+description = "PULSE - perpetual markets on internet attention"
+
+[lib]
+crate-type = ["cdylib", "lib"]
+name = "pulse"
+
+[features]
+default = []
+no-entrypoint = []
+cpi = ["no-entrypoint"]
+anchor-debug = []
+custom-heap = []
+custom-panic = []
+idl-build = ["anchor-lang/idl-build", "anchor-spl/idl-build"]
+
+[dependencies]
+anchor-lang = "=0.31.1"
+anchor-spl = "=0.31.1"
+bytemuck = { version = "1.14", features = ["derive", "min_const_generics"] }
+
+[lints.rust]
+unexpected_cfgs = { level = "allow" }
