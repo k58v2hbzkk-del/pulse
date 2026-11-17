@@ -4,7 +4,9 @@ import { MARKETS } from "../keeper/markets.js";
 
 const RPC = new URLSearchParams(location.search).get("rpc") || "https://api.devnet.solana.com";
 const DEMO = new URLSearchParams(location.search).has("demo");
-const conn = new Connection(RPC, "confirmed");
+// Every RPC call gives up after 12s, so a stuck mobile connection shows a retry message instead of a blank page.
+const timedFetch = (url, opts = {}) => fetch(url, { ...opts, signal: AbortSignal.timeout ? AbortSignal.timeout(12_000) : undefined });
+const conn = new Connection(RPC, { commitment: "confirmed", fetch: timedFetch, disableRetryOnRateLimit: true });
 const MARKET_IDS = MARKETS.map((m) => m.id);
 const META = Object.fromEntries(MARKETS.map((m) => [m.id, m]));
 const UNIT = { steam: "playing now", twitch: "watching now", wiki: "views yesterday", github: "stars / day", narrative: "$M traded 24h", fng: "/ 100 mood", solana: "tx / second" };
@@ -101,6 +103,7 @@ async function load() {
     $("banner").hidden = false;
     $("banner").innerHTML = 'Markets are launching. Check back in a few minutes. <a href="?demo">See a preview</a>';
   } else $("banner").hidden = true;
+  render(); // show markets right away; duels and your positions fill in next
 
   if (!state.house) {
     try { const ci = await conn.getAccountInfo(P.configPda()); if (ci) state.house = P.decodeConfig(ci.data).keeper; } catch {}
@@ -110,7 +113,7 @@ async function load() {
     state.duels = raw.map(({ pubkey, account }) => ({ pk: pubkey, d: P.decodeDuel(account.data) })).sort((a, b) => b.d.created - a.d.created);
   } catch (e) { console.warn("duels", e); }
 
-  if (wallet) {
+  if (wallet) try {
     const posPks = markets.map((x) => P.positionPda(x.pk, wallet.publicKey));
     const [posInfos, sol] = await Promise.all([
       conn.getMultipleAccountsInfo(posPks),
@@ -119,7 +122,7 @@ async function load() {
     state.positions = new Map();
     posInfos.forEach((pi, i) => { if (pi) state.positions.set(markets[i].pk.toBase58(), P.decodePosition(pi.data)); });
     state.sol = sol / LAMPORTS_PER_SOL;
-  }
+  } catch (e) { console.warn("positions", e); }
 }
 
 function positionView(x) {
@@ -531,12 +534,15 @@ async function refresh() {
     fails++;
     $("banner").hidden = false;
     $("banner").innerHTML = `Couldn't reach Solana devnet (${String(e.message || e).slice(0, 80)}). Retrying${fails > 2 ? " — if this keeps happening, switch between Wi-Fi and mobile data" : ""}…`;
-    setTimeout(refresh, Math.min(30_000, 2_000 * fails));
+    setTimeout(() => tick(), Math.min(30_000, 2_000 * fails));
   }
   render(); // always update the page, even when the network call failed
 }
-refresh();
-setInterval(refresh, 15_000);
+if (!DEMO) { $("banner").hidden = false; $("banner").innerHTML = "Loading live markets from Solana devnet…"; }
+let inFlight = false;
+const tick = async () => { if (inFlight) return; inFlight = true; try { await refresh(); } finally { inFlight = false; } };
+tick();
+setInterval(tick, 15_000);
 setInterval(async () => {
   if (DEMO) return;
   const room = chatOpen || (openId != null && state.markets.find((y) => y.m.id === openId)?.pk.toBase58());

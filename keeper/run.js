@@ -174,18 +174,20 @@ async function backstop() {
   }
 }
 
+let round = 0;
 while (Date.now() - started < RUN_FOR) {
   const t = Date.now();
   console.log(new Date().toISOString());
-  try {
-    if ((await solBalance(keeper.publicKey)) < 0.2) await tryAirdrop(keeper.publicKey);
-    await pushAll();
-    await settleFilled();
-    await settleDuels();
-    await houseDuels();
-    await backstop();
-  } catch (e) {
-    console.log("round error:", e.message);
+  round++;
+  const step = async (name, fn) => { try { await fn(); } catch (e) { console.log(`${name} error:`, e.message); } };
+  if (round % 10 === 1) await step("balance", async () => { if ((await solBalance(keeper.publicKey)) < 0.2) await tryAirdrop(keeper.publicKey); });
+  await step("push", pushAll);
+  await step("settle", settleFilled);
+  // lighter steps every 3rd round to stay under the free RPC rate limit
+  if (round % 3 === 1) {
+    await step("duels", settleDuels);
+    await step("house", houseDuels);
+    await step("backstop", backstop);
   }
   await sleep(Math.max(1000, INTERVAL - (Date.now() - t)));
 }
