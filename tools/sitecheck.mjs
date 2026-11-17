@@ -3,8 +3,8 @@
 import { chromium, webkit } from "playwright";
 const url = process.env.SITE || "https://k58v2hbzkk-del.github.io/pulse/";
 const WALLET = process.env.WALLET || "7EGXZbPkDnDy2z8oWpKRJhufQnCRKT3MBPmFcNhqGbXk";
-for (const [name, type] of [["chromium", chromium], ["webkit", webkit]]) {
-  for (const withWallet of [false, true]) {
+for (const [name, type] of [["webkit", webkit]]) {
+  for (const withWallet of [false]) {
     const b = await type.launch();
     const pg = await b.newPage({ viewport: { width: 390, height: 844 } });
     if (withWallet) await pg.addInitScript((pk) => {
@@ -24,7 +24,9 @@ for (const [name, type] of [["chromium", chromium], ["webkit", webkit]]) {
     cards.slice(0, 3).forEach((c) => console.log("  ", c));
     console.log("BANNER:", await pg.$eval("#banner", (e) => (e.hidden ? "(hidden)" : e.innerText)).catch(() => "?"));
     console.log("CHIPS:", await pg.$$eval("#cats button, .chip", (els) => els.map((e) => e.innerText).join(" | ")).catch(() => "?"));
-    await pg.click("text=Duels").catch(() => {});
+    const qs = await pg.$$eval("#preds .pcard", (els) => els.map((e) => e.innerText.replace(/\s+/g, " ").slice(0, 150)));
+    console.log("QUESTIONS:", qs.length); qs.slice(0, 12).forEach((q) => console.log("  ?", q));
+    await pg.click("#seg >> text=Duels").catch(() => {});
     await pg.waitForTimeout(1500);
     console.log("OPEN DUELS:", (await pg.$eval("#openDuels", (e) => e.innerText).catch(() => "?")).replace(/\s+/g, " ").slice(0, 400));
     console.log("LOGS:\n" + logs.slice(0, 15).join("\n"));
