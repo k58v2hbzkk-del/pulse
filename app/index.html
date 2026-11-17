@@ -83,7 +83,7 @@
   .pools i { height: 100%; }
   .mine { margin-top: 10px; font-size: 12px; font-family: var(--mono); color: var(--brand2); }
   .feats { display: grid; gap: 14px; }
-  @media (min-width: 760px) { .feats { grid-template-columns: repeat(3, 1fr); } }
+  @media (min-width: 760px) { .feats { grid-template-columns: repeat(2, 1fr); } }
   .feat { background: var(--card); border: 1px solid var(--line); border-radius: 22px; padding: 22px; }
   .ficon { width: 44px; height: 44px; border-radius: 12px; background: #1d140a; border: 1px solid #3d2a12; display: grid; place-items: center; color: var(--brand); margin-bottom: 16px; }
   .ficon svg { width: 22px; height: 22px; }
@@ -170,6 +170,8 @@
         <h3>No broker, no expiry</h3><p class="muted">Trade straight from your wallet. Positions never expire. Hold for a minute or a month.</p></div>
       <div class="feat"><div class="ficon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v20M5 9l7-7 7 7"/></svg></div>
         <h3>Nobody is owed what isn't there</h3><p class="muted">Winners are paid from the other side's pool. No house, no liquidity providers, no bad debt. Your loss is capped at the SOL you put in.</p></div>
+      <div class="feat"><div class="ficon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 12h16M12 4v16"/><circle cx="12" cy="12" r="9"/></svg></div>
+        <h3>Always a counterparty</h3><p class="muted">When a market is one-sided, the PULSE Backstop takes the other side of your trade, so you can win even when nobody else is online.</p></div>
       <div class="feat dotted"><h3>Fair fills</h3><p class="muted" style="margin-top:8px">Orders fill at the price after the next update, so nobody trades on a number they already saw.</p></div>
     </div>
   </section>
@@ -189,6 +191,7 @@
       <h2>FAQ</h2>
       <details open><summary>What can I trade?</summary><p class="muted">Live player counts of major games on Steam. More attention indexes (views, streams, searches) are on the roadmap.</p></details>
       <details><summary>Where does the data come from?</summary><p class="muted">A keeper reads Steam's public player-count API and posts it on-chain every minute. Every price is visible on Solana.</p></details>
+      <details><summary>Who do I win from if nobody else is trading?</summary><p class="muted">The PULSE Backstop. It automatically takes the opposite side of one-sided markets (up to 0.5 SOL per market on devnet). On mainnet it becomes a vault anyone can deposit into to earn trading fees.</p></details>
       <details><summary>Can I get liquidated?</summary><p class="muted">No. You hold a share of a pool. It shrinks when you're wrong, but it never goes below zero and nobody force-closes you.</p></details>
       <details><summary>What do I trade with?</summary><p class="muted">Not yet. PULSE runs on Solana devnet, so you trade with devnet SOL, which is free. Tap "Get free devnet SOL" inside any market.</p></details>
       <details><summary>Why does my order take a couple of minutes?</summary><p class="muted">Fair fills. Your order fills at the price after the next update, so nobody can trade on data they already saw.</p></details>

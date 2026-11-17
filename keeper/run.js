@@ -2,7 +2,8 @@
 // filled orders for users. Runs inside GitHub Actions for free (restarts every ~6h).
 import { conn, loadKey, send, solBalance, tryAirdrop, steamPlayers, sleep } from "./common.js";
 import {
-  PROGRAM_ID, marketPda, pushPriceIx, settleIx, decodeMarket, decodePosition, ACCT,
+  PROGRAM_ID, marketPda, positionPda, pushPriceIx, settleIx, openPositionIx, depositIx,
+  decodeMarket, decodePosition, sharePrice, valueOf, ACCT,
 } from "../app/sdk.js";
 import { MARKETS } from "./markets.js";
 import bs58 from "bs58";
@@ -49,6 +50,51 @@ async function settleFilled() {
   }
 }
 
+// ------------------------------------------------------------ Backstop
+// Takes the thin side so every trader always has a counterparty. Matches user flow
+// up to MM_MAX_PER_MARKET_SOL per market. Never holds both sides of a market.
+const MM_ON = process.env.MM_ENABLED !== "0";
+const sol = (env, d) => BigInt(Math.round(Number(process.env[env] || d) * 1e9));
+const MM_MAX = sol("MM_MAX_PER_MARKET_SOL", 0.5);
+const MM_RESERVE = sol("MM_RESERVE_SOL", 0.5); // always keep for keeper fees
+const MIN_ORDER = 10_000_000n; // 0.01 SOL
+
+async function backstop() {
+  if (!MM_ON) return;
+  let budget = BigInt(await conn.getBalance(keeper.publicKey)) - MM_RESERVE;
+  for (const cfg of MARKETS) {
+    if (budget < MIN_ORDER) { console.log("  backstop: budget used up, top up the keeper wallet"); return; }
+    const mk = marketPda(cfg.id);
+    const [mi, pi] = await conn.getMultipleAccountsInfo([mk, positionPda(mk, keeper.publicKey)]);
+    if (!mi) continue;
+    const m = decodeMarket(mi.data);
+    const pos = pi ? decodePosition(pi.data) : null;
+    const ixs = [];
+    if (pos?.pending) {
+      if (m.epoch >= pos.pendingEpoch + 2n) ixs.push(settleIx(mk, keeper.publicKey));
+      else continue; // our last order is still filling
+    }
+    const L = m.longBalance + m.pendLongDep[0] + m.pendLongDep[1];
+    const S = m.shortBalance + m.pendShortDep[0] + m.pendShortDep[1];
+    if (L === S) { if (ixs.length) await send(keeper, ...ixs).catch(() => {}); continue; }
+    const side = L > S ? 1 : 0; // take the thinner side
+    const botLong = pos ? valueOf(pos.longShares, sharePrice(m.longBalance, m.longShares)) : 0n;
+    const botShort = pos ? valueOf(pos.shortShares, sharePrice(m.shortBalance, m.shortShares)) : 0n;
+    if ((side === 1 && botLong > 0n) || (side === 0 && botShort > 0n)) continue; // never both sides
+    const room = MM_MAX - (botLong + botShort + (pos ? pos.depLong + pos.depShort : 0n));
+    let amt = L > S ? L - S : S - L;
+    if (amt > room) amt = room;
+    if (amt > budget) amt = budget;
+    if (amt < MIN_ORDER) { if (ixs.length) await send(keeper, ...ixs).catch(() => {}); continue; }
+    if (!pos) ixs.push(openPositionIx(keeper.publicKey, mk));
+    ixs.push(depositIx(keeper.publicKey, mk, side, amt));
+    try {
+      console.log(`  backstop ${cfg.name}: ${side ? "SHORT" : "LONG"} ${Number(amt) / 1e9} SOL`, await send(keeper, ...ixs));
+      budget -= amt;
+    } catch (e) { console.log(`  backstop ${cfg.name} failed:`, e.message); }
+  }
+}
+
 while (Date.now() - started < RUN_FOR) {
   const t = Date.now();
   console.log(new Date().toISOString());
@@ -56,6 +102,7 @@ while (Date.now() - started < RUN_FOR) {
     if ((await solBalance(keeper.publicKey)) < 0.2) await tryAirdrop(keeper.publicKey);
     await pushAll();
     await settleFilled();
+    await backstop();
   } catch (e) {
     console.log("round error:", e.message);
   }

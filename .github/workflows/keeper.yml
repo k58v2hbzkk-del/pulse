@@ -1,5 +1,5 @@
 # The oracle keeper. Posts live Steam player counts on-chain every minute and settles
-# filled orders. Free on public repos. Each run lasts ~5.8h; hourly schedule queues the next.
+# filled orders. Free on public repos. Each run lasts ~55 min; the hourly schedule starts the next, so code updates apply within the hour.
 name: Keeper
 on:
   schedule:
@@ -11,7 +11,7 @@ concurrency:
 jobs:
   keep:
     runs-on: ubuntu-latest
-    timeout-minutes: 355
+    timeout-minutes: 65
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -22,5 +22,5 @@ jobs:
           ADMIN_KEY: ${{ secrets.ADMIN_KEY }}
           RPC_URL: ${{ secrets.RPC_URL || 'https://api.devnet.solana.com' }}
           INTERVAL_SEC: "60"
-          RUN_MINUTES: "345"
+          RUN_MINUTES: "55"
         run: node keeper/run.js

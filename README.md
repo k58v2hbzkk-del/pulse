@@ -25,6 +25,8 @@ Each market has a **LONG pool** and a **SHORT pool**, funded in SOL.
 3. Traders hold **shares** of a pool. Share value rises and falls with the pool.
 4. **Fair fills:** orders are queued and filled at the share price recorded one full update *after* the update you ordered in. Nobody can trade on a number they already saw.
 
+**Always a counterparty — the Backstop.** A one-sided market has no one to pay winners, so the keeper runs a Backstop that automatically takes the thinner side (matching user flow up to a per-market cap, never holding both sides). Solo traders can win even when nobody else is online. On devnet it runs on free faucet SOL; on mainnet it becomes a vault anyone can deposit into to earn trading fees.
+
 Winners are only ever paid from the other side's pool. No house, no LPs, no liquidations, no bad debt. Losses are capped at what you put in.
 
 ## What's in the repo

@@ -55,7 +55,7 @@ function demoData() {
     const lb = BigInt(80 + k * 30) * SOL, sb = BigInt(110 - k * 15) * SOL;
     return {
       pk: P.marketPda(k + 1), m: { id: k + 1, name, leverage: k > 2 ? 5 : 3, active: true, price: hist.at(-1).price, lastUpdate: now - 20,
-        epoch: 120n, longBalance: lb, shortBalance: sb, longShares: lb, shortShares: sb }, hist,
+        epoch: 120n, longBalance: lb, shortBalance: sb, longShares: lb, shortShares: sb, pendLongDep: [0n, 0n], pendShortDep: [0n, 0n] }, hist,
     };
   });
 }
@@ -102,8 +102,16 @@ function positionView(x) {
   const shortVal = P.valueOf(pos.shortShares, ssp);
   const ready = pos.pending && x.m.epoch >= pos.pendingEpoch + 2n;
   const updatesLeft = pos.pending ? Number(pos.pendingEpoch + 2n - x.m.epoch) : 0;
-  return { pos, longVal, shortVal, ready, updatesLeft };
+  let order = "";
+  if (pos.pending) {
+    const when = ready ? "filled" : `joins in ~${updatesLeft} min`;
+    if (pos.depLong) order = `${P.fmtSol(pos.depLong)} SOL LONG · ${when}`;
+    else if (pos.depShort) order = `${P.fmtSol(pos.depShort)} SOL SHORT · ${when}`;
+    else order = `Closing ${pos.wdLong ? "long" : "short"} · ${ready ? "paid out" : `pays out in ~${updatesLeft} min`}`;
+  }
+  return { pos, longVal, shortVal, ready, updatesLeft, order };
 }
+const pendingOf = (m) => ({ long: m.pendLongDep[0] + m.pendLongDep[1], short: m.pendShortDep[0] + m.pendShortDep[1] });
 
 // ------------------------------------------------------------ render
 const GLYPH = ["linear-gradient(135deg,#ff8a1f,#ff4d2e)", "linear-gradient(135deg,#e0483e,#7a1d16)", "linear-gradient(135deg,#f2b33d,#a0661a)", "linear-gradient(135deg,#d6336c,#5c1230)", "linear-gradient(135deg,#ff6b3d,#8a2a10)"];
@@ -129,8 +137,8 @@ function render() {
       const parts = [];
       if (pv.longVal) parts.push(`LONG ${P.fmtSol(pv.longVal)} SOL`);
       if (pv.shortVal) parts.push(`SHORT ${P.fmtSol(pv.shortVal)} SOL`);
-      if (pv.pos.pending) parts.push(pv.ready ? "order filled" : `filling · ${pv.updatesLeft} update${pv.updatesLeft === 1 ? "" : "s"}`);
-      mine = `<div class="mine">You: ${parts.join(" · ")}</div>`;
+      if (pv.order) parts.push(`Order: ${pv.order}`);
+      mine = `<div class="mine">${parts.join("<br>")}</div>`;
     }
     return `<button class="mcard" data-id="${x.m.id}">
       <div class="mhead"><span class="glyph" style="background:${GLYPH[k % GLYPH.length]}">${initials(x.m.name)}</span>
@@ -152,8 +160,14 @@ function renderSheet() {
   if (!x) return;
   const vals = x.hist.map((h) => Number(h.price));
   const first = x.hist[0], last = x.hist.at(-1);
-  const sens = P.sensitivity(x.m);
+  const pend = pendingOf(x.m);
+  const sens = P.sensitivity({ ...x.m, longBalance: x.m.longBalance + pend.long, shortBalance: x.m.shortBalance + pend.short });
   const pv = positionView(x);
+  const joining = (v) => (v ? ` <span style="font-size:11px;color:var(--brand2)">+${P.fmtSol(v)} joining</span>` : "");
+  const yours = pv && (pv.longVal || pv.shortVal || pv.order) ? `<div class="stat" style="grid-template-columns:1fr">
+      <div style="border-color:#3d2a12;background:#1c1309"><span>Your position</span>
+      ${pv.longVal ? `<b class="up">LONG ${P.fmtSol(pv.longVal)} SOL</b>` : ""}${pv.shortVal ? `<b class="down">SHORT ${P.fmtSol(pv.shortVal)} SOL</b>` : ""}
+      ${pv.order ? `<b style="font-size:13px;color:var(--brand2)">Order: ${pv.order}</b>` : ""}</div></div>` : "";
   const pending = pv?.pos.pending;
   let action = "";
   if (!wallet) action = `<button class="btn" style="width:100%;padding:15px;justify-content:center" id="sConnect">Connect wallet to trade</button>`;
@@ -168,7 +182,7 @@ function renderSheet() {
       ${pv && (pv.longVal || pv.shortVal) ? `<div class="close2">
         <button class="btn ghost" id="closeL" ${!pv.longVal || (pending && !pv.ready) ? "disabled" : ""}>Close long ${P.fmtSol(pv.longVal)} SOL</button>
         <button class="btn ghost" id="closeS" ${!pv.shortVal || (pending && !pv.ready) ? "disabled" : ""}>Close short ${P.fmtSol(pv.shortVal)} SOL</button></div>` : ""}
-      ${pending ? `<p class="hint">${pv.ready ? "Your last order is filled. Your next action finishes it automatically (the keeper also does this for you)." : `Your order fills after ${pv.updatesLeft} more price update${pv.updatesLeft === 1 ? "" : "s"} (about ${pv.updatesLeft} min).`}</p>` : ""}`;
+      ${pending ? `<p class="hint">${pv.ready ? "Your order is in. It shows in your position within a minute." : `Your order is waiting to join the pool. It joins after ${pv.updatesLeft} more price update${pv.updatesLeft === 1 ? "" : "s"} (about ${pv.updatesLeft} min), so nobody can trade on a number they've already seen.`}</p>` : ""}`;
   }
   $("panel").innerHTML = `<div class="grab"></div>
     <div class="row"><span class="mname" style="font-size:20px">${x.m.name}</span><span class="net">${x.m.leverage}x PERPETUAL</span></div>
@@ -178,11 +192,13 @@ function renderSheet() {
     <div class="stat">
       <div><span>If players +1%, longs earn</span><b class="up">+${(sens.longGain * 100).toFixed(2)}%</b></div>
       <div><span>If players −1%, shorts earn</span><b class="up">+${(sens.shortGain * 100).toFixed(2)}%</b></div>
-      <div><span>Long pool</span><b>${P.fmtSol(x.m.longBalance)} SOL</b></div>
-      <div><span>Short pool</span><b>${P.fmtSol(x.m.shortBalance)} SOL</b></div>
+      <div><span>Long pool</span><b>${P.fmtSol(x.m.longBalance)} SOL${joining(pend.long)}</b></div>
+      <div><span>Short pool</span><b>${P.fmtSol(x.m.shortBalance)} SOL${joining(pend.short)}</b></div>
     </div>
+    ${yours}
     ${action}
-    <p class="hint">Losses are capped at what you put in. Winners are paid from the other side's pool, never from a house.</p>`;
+    <p class="hint"><b style="color:var(--brand2)">Always someone on the other side.</b> When a market is one-sided, the PULSE Backstop matches your trade (up to 0.5 SOL per market), so you can win even when nobody else is online.</p>
+    <p class="hint">You can't lose more than the SOL you put in. Winners are paid from the other side's pool.</p>`;
   const bind = (id, fn) => { const el = $(id); if (el) el.onclick = fn; };
   bind("sConnect", connect);
   bind("faucet", () => run(faucet, true));
