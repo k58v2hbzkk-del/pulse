@@ -48,6 +48,40 @@ export async function githubStarsPerDay(repo) {
   return perDay;
 }
 
+/** 24h trading volume (in $M) of a CoinGecko narrative category, matched by name. */
+let cgCats = null, cgAt = 0;
+export async function coingeckoCategoryVolume(match) {
+  if (!cgCats || Date.now() - cgAt > 10 * 60_000) {
+    cgCats = await (await get("https://api.coingecko.com/api/v3/coins/categories")).json();
+    cgAt = Date.now();
+  }
+  const want = match.toLowerCase();
+  const hit = cgCats.find((c) => c.id?.toLowerCase() === want) || cgCats.find((c) => c.name?.toLowerCase() === want)
+    || cgCats.find((c) => c.name?.toLowerCase().includes(want));
+  const v = Math.round((hit?.volume_24h || 0) / 1e6);
+  if (!(v > 0)) throw new Error(`coingecko category ${match} not found`);
+  return v;
+}
+
+/** Crypto Fear & Greed Index (0-100), alternative.me, updated daily. */
+export async function fearGreed() {
+  const j = await (await get("https://api.alternative.me/fng/?limit=1")).json();
+  const v = Number(j?.data?.[0]?.value);
+  if (!(v > 0)) throw new Error("fear & greed no data");
+  return v;
+}
+
+/** Solana mainnet transactions per second (average of the latest 60s samples). */
+export async function solanaTps() {
+  const res = await fetch("https://api.mainnet-beta.solana.com", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "getRecentPerformanceSamples", params: [3] }), signal: AbortSignal.timeout(15_000) });
+  const j = await res.json();
+  const s = j?.result || [];
+  const tx = s.reduce((a, x) => a + x.numTransactions, 0), sec = s.reduce((a, x) => a + x.samplePeriodSecs, 0);
+  const v = sec ? Math.round(tx / sec) : 0;
+  if (!(v > 0)) throw new Error("solana tps no data");
+  return v;
+}
+
 let twitchToken = null;
 async function twitchAuth() {
   const id = process.env.TWITCH_CLIENT_ID, secret = process.env.TWITCH_CLIENT_SECRET;
@@ -69,7 +103,7 @@ export async function twitchCategoryViewers(gameId) {
 }
 
 // cache so slow-moving sources aren't hammered every minute
-const TTL = { steam: 0, twitch: 0, github: 10 * 60_000, wiki: 60 * 60_000 };
+const TTL = { steam: 0, twitch: 0, github: 10 * 60_000, wiki: 60 * 60_000, narrative: 10 * 60_000, fng: 30 * 60_000, solana: 0 };
 const cache = new Map();
 export async function readSource(m) {
   const key = `${m.kind}:${m.ref}`;
@@ -79,6 +113,9 @@ export async function readSource(m) {
     : m.kind === "wiki" ? await wikiViews(m.ref)
     : m.kind === "github" ? await githubStarsPerDay(m.ref)
     : m.kind === "twitch" ? await twitchCategoryViewers(m.ref)
+    : m.kind === "narrative" ? await coingeckoCategoryVolume(m.ref)
+    : m.kind === "fng" ? await fearGreed()
+    : m.kind === "solana" ? await solanaTps()
     : Promise.reject(new Error(`unknown source ${m.kind}`));
   cache.set(key, { v, t: Date.now() });
   return v;
