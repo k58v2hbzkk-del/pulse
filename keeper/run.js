@@ -3,7 +3,7 @@
 import { conn, loadKey, send, solBalance, tryAirdrop, steamPlayers, sleep } from "./common.js";
 import { sendWithUpdate, feedIdOf } from "./oracle.js";
 import {
-  PROGRAM_ID, marketPda, positionPda, indexPda, quotePda, decodeIndex, pushPriceIx, settleIx, openPositionIx, depositIx,
+  PROGRAM_ID, marketPda, positionPda, indexPda, quotePda, decodeIndex, pushPriceIx, setFeedIx, settleIx, openPositionIx, depositIx,
   decodeMarket, decodePosition, sharePrice, valueOf, ACCT,
 } from "../app/sdk.js";
 import { MARKETS } from "./markets.js";
@@ -34,6 +34,12 @@ async function pushAll() {
       }
     } catch (e) {
       console.log(`  ${m.name}: skipped (${e.message?.slice(0, 200)})`);
+      if (idx?.oracle) {
+        // oracle network unavailable: fall back to keeper data so the market never freezes
+        await send(keeper, setFeedIx(keeper.publicKey, mk, new Uint8Array(32)))
+          .then(() => console.log(`  ${m.name}: oracle unavailable, switched to keeper data`))
+          .catch(() => {});
+      }
     }
   }
   if (keeperIxs.length) console.log("  pushed:", await send(keeper, ...keeperIxs));

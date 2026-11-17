@@ -31,7 +31,7 @@ for (const m of MARKETS) {
 }
 
 // Switch each market to the Switchboard oracle, but only after a real signed update works.
-if (process.env.ENABLE_ORACLE !== "0") {
+if (process.env.ENABLE_ORACLE === "1") {
   for (const m of MARKETS) {
     const mk = marketPda(m.id);
     const feedId = feedIdOf(m);
