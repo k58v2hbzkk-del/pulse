@@ -36,6 +36,13 @@ jobs:
         run: |
           ls -la target/deploy/
           solana airdrop 2 || echo "airdrop rate-limited; using existing balance"
+          PID=$(solana address -k program.json)
+          NEW=$(stat -c%s target/deploy/pulse.so)
+          CUR=$(solana program show $PID --url "$RPC_URL" --output json 2>/dev/null | python3 -c "import json,sys;print(json.load(sys.stdin).get('dataLen',0))" || echo 0)
+          echo "program size: new=$NEW on-chain=$CUR"
+          if [ "$CUR" -gt 0 ] && [ "$NEW" -gt "$CUR" ]; then
+            solana program extend $PID $((NEW - CUR + 20480)) --keypair admin.json --url "$RPC_URL"
+          fi
           solana program deploy target/deploy/pulse.so --program-id program.json --keypair admin.json --url "$RPC_URL"
       - name: Create config + markets
         env:

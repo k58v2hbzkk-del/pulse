@@ -181,7 +181,7 @@
     <div class="steps">
       <div class="step"><b>Pick a market</b><span class="muted">Each game is a market. Its index is the live number of people playing.</span></div>
       <div class="step"><b>Go long or short</b><span class="muted">Longs sit in one pool, shorts in the other. Each market has fixed leverage.</span></div>
-      <div class="step"><b>The number moves</b><span class="muted">Every minute, value flows from the losing pool to the winning pool.</span></div>
+      <div class="step"><b>The index moves</b><span class="muted">Every minute, verified data updates the 24h index and value flows from the losing pool to the winning pool.</span></div>
       <div class="step"><b>Close anytime</b><span class="muted">Your share of the pool is paid back to your wallet.</span></div>
     </div>
   </section>
@@ -190,7 +190,8 @@
     <div class="faq">
       <h2>FAQ</h2>
       <details open><summary>What can I trade?</summary><p class="muted">Live player counts of major games on Steam. More attention indexes (views, streams, searches) are on the roadmap.</p></details>
-      <details><summary>Where does the data come from?</summary><p class="muted">A keeper reads Steam's public player-count API and posts it on-chain every minute. Every price is visible on Solana.</p></details>
+      <details><summary>Where does the data come from? Can anyone fake it?</summary><p class="muted">Switchboard's oracle network reads Steam's public player-count API and signs the number. The PULSE program checks that signature on-chain before using it, so nobody (not even PULSE) can post a fake number. Markets marked "✓ Switchboard-verified" run this way.</p></details>
+      <details><summary>Why a 24-hour average?</summary><p class="muted">Every game peaks and dips at the same hours each day. If you traded the raw number, people could farm that predictable cycle. The program averages the last 24 hours on-chain, so the daily cycle cancels out and only real trends move the price: a game growing, dying, or blowing up at launch.</p></details>
       <details><summary>Who do I win from if nobody else is trading?</summary><p class="muted">The PULSE Backstop. It automatically takes the opposite side of one-sided markets (up to 0.5 SOL per market on devnet). On mainnet it becomes a vault anyone can deposit into to earn trading fees.</p></details>
       <details><summary>Can I get liquidated?</summary><p class="muted">No. You hold a share of a pool. It shrinks when you're wrong, but it never goes below zero and nobody force-closes you.</p></details>
       <details><summary>What do I trade with?</summary><p class="muted">Not yet. PULSE runs on Solana devnet, so you trade with devnet SOL, which is free. Tap "Get free devnet SOL" inside any market.</p></details>

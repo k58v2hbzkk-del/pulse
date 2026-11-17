@@ -1,8 +1,9 @@
 // The keeper: posts live attention data on-chain every INTERVAL seconds and auto-settles
 // filled orders for users. Runs inside GitHub Actions for free (restarts every ~6h).
 import { conn, loadKey, send, solBalance, tryAirdrop, steamPlayers, sleep } from "./common.js";
+import { sendWithUpdate, feedIdOf } from "./oracle.js";
 import {
-  PROGRAM_ID, marketPda, positionPda, pushPriceIx, settleIx, openPositionIx, depositIx,
+  PROGRAM_ID, marketPda, positionPda, indexPda, quotePda, decodeIndex, pushPriceIx, settleIx, openPositionIx, depositIx,
   decodeMarket, decodePosition, sharePrice, valueOf, ACCT,
 } from "../app/sdk.js";
 import { MARKETS } from "./markets.js";
@@ -15,17 +16,27 @@ const started = Date.now();
 console.log("keeper:", keeper.publicKey.toBase58(), "interval", INTERVAL / 1000, "s");
 
 async function pushAll() {
-  const ixs = [];
+  const keeperIxs = [];
   for (const m of MARKETS) {
+    const mk = marketPda(m.id);
+    const ii = await conn.getAccountInfo(indexPda(mk));
+    const idx = ii ? decodeIndex(ii.data) : null;
     try {
-      const players = await steamPlayers(m.sourceId);
-      ixs.push(pushPriceIx(keeper.publicKey, marketPda(m.id), players));
-      console.log(`  ${m.name}: ${players}`);
+      if (idx?.oracle) {
+        // Oracle mode: Switchboard oracles sign the Steam number; the program verifies it.
+        const feedId = feedIdOf(m);
+        const sig = await sendWithUpdate(keeper, m, pushPriceIx(keeper.publicKey, mk, 0, quotePda(feedId)));
+        console.log(`  ${m.name}: oracle update`, sig);
+      } else {
+        const players = await steamPlayers(m.sourceId);
+        keeperIxs.push(pushPriceIx(keeper.publicKey, mk, players));
+        console.log(`  ${m.name}: ${players}`);
+      }
     } catch (e) {
-      console.log(`  ${m.name}: skipped (${e.message})`);
+      console.log(`  ${m.name}: skipped (${e.message?.slice(0, 200)})`);
     }
   }
-  if (ixs.length) console.log("  pushed:", await send(keeper, ...ixs));
+  if (keeperIxs.length) console.log("  pushed:", await send(keeper, ...keeperIxs));
 }
 
 async function settleFilled() {

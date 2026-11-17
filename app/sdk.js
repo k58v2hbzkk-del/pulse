@@ -22,13 +22,21 @@ const IX = {
   deposit: [242, 35, 198, 137, 82, 225, 242, 182],
   withdraw: [183, 18, 70, 156, 148, 109, 161, 34],
   settle: [175, 42, 185, 87, 144, 131, 102, 212],
+  init_index: [206, 236, 58, 58, 171, 221, 237, 57],
+  set_feed: [79, 150, 2, 207, 41, 104, 77, 41],
 };
 export const ACCT = {
   Config: [155, 12, 170, 224, 30, 250, 204, 130],
   Market: [219, 190, 213, 55, 0, 227, 198, 154],
   History: [31, 216, 60, 33, 213, 209, 70, 101],
   Position: [170, 188, 143, 228, 122, 64, 247, 208],
+  Index: [140, 66, 194, 132, 78, 26, 135, 186],
 };
+export const QUOTE_PROGRAM = new PublicKey("orac1eFjzWL5R3RbbdMV68K9H6TaCVVcL6LjvQQWAbz");
+export const SB_DEVNET_QUEUE = new PublicKey("EYiAmGSdsQTuCw413V5BzaruWuCCSDgTPtBGvLkXHbe7");
+/** Canonical Switchboard quote account for one feed on the devnet queue. */
+export const quotePda = (feedId) =>
+  PublicKey.findProgramAddressSync([SB_DEVNET_QUEUE.toBuffer(), Buffer.from(feedId)], QUOTE_PROGRAM)[0];
 
 // ------------------------------------------------------------ encoding helpers
 const u8 = (v) => Buffer.from([v]);
@@ -55,6 +63,7 @@ export const mintPda = () => pda([Buffer.from("mint")]);
 export const marketPda = (id) => pda([Buffer.from("market"), u32(id)]);
 export const historyPda = (market) => pda([Buffer.from("history"), market.toBuffer()]);
 export const vaultPda = (market) => pda([Buffer.from("vault"), market.toBuffer()]);
+export const indexPda = (market) => pda([Buffer.from("index"), market.toBuffer()]);
 export const positionPda = (market, owner) => pda([Buffer.from("position"), market.toBuffer(), owner.toBuffer()]);
 export const ataOf = (owner, mint = mintPda()) =>
   PublicKey.findProgramAddressSync([owner.toBuffer(), TOKEN_PROGRAM.toBuffer(), mint.toBuffer()], ATA_PROGRAM)[0];
@@ -89,8 +98,17 @@ export function createMarketIx(admin, { id, name, sourceId, leverage, initialPri
 export const setActiveIx = (admin, market, active) =>
   ix([r(admin, true), r(configPda()), w(market)], data("set_active", u8(active ? 1 : 0)));
 
-export const pushPriceIx = (keeper, market, price) =>
-  ix([r(keeper, true), r(configPda()), w(market), w(historyPda(market))], data("push_price", u64(price)));
+/** quote = Switchboard quote account in oracle mode, any account (e.g. SystemProgram) in keeper mode */
+export const pushPriceIx = (cranker, market, price, quote = SystemProgram.programId) =>
+  ix([r(cranker, true), r(configPda()), w(market), w(historyPda(market)), w(indexPda(market)), r(quote)],
+    data("push_price", u64(price)));
+
+export const initIndexIx = (admin, market, feedId = new Uint8Array(32)) =>
+  ix([w(admin, true), r(configPda()), r(market), w(indexPda(market)), r(SystemProgram.programId)],
+    data("init_index", Buffer.from(feedId)));
+
+export const setFeedIx = (admin, market, feedId) =>
+  ix([r(admin, true), r(configPda()), r(market), w(indexPda(market))], data("set_feed", Buffer.from(feedId)));
 
 export const openPositionIx = (owner, market) =>
   ix([w(owner, true), r(market), w(positionPda(market, owner)), r(SystemProgram.programId)], data("open_position"));
@@ -156,6 +174,18 @@ export function decodePosition(buf) {
     depShort: rd64(dv, 122),
     wdLong: rd128(dv, 130),
     wdShort: rd128(dv, 146),
+  };
+}
+
+export function decodeIndex(buf) {
+  const dv = view(buf);
+  const feedId = buf.subarray(40, 72);
+  return {
+    market: key(buf, 8),
+    feedId: Uint8Array.from(feedId),
+    oracle: feedId.some((b) => b !== 0),
+    lastRaw: rd64(dv, 72),
+    lastTime: Number(dv.getBigInt64(80, true)),
   };
 }
 

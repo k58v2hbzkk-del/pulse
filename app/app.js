@@ -55,7 +55,7 @@ function demoData() {
     const lb = BigInt(80 + k * 30) * SOL, sb = BigInt(110 - k * 15) * SOL;
     return {
       pk: P.marketPda(k + 1), m: { id: k + 1, name, leverage: k > 2 ? 5 : 3, active: true, price: hist.at(-1).price, lastUpdate: now - 20,
-        epoch: 120n, longBalance: lb, shortBalance: sb, longShares: lb, shortShares: sb, pendLongDep: [0n, 0n], pendShortDep: [0n, 0n] }, hist,
+        epoch: 120n, longBalance: lb, shortBalance: sb, longShares: lb, shortShares: sb, pendLongDep: [0n, 0n], pendShortDep: [0n, 0n] }, hist, idx: { lastRaw: hist.at(-1).price + 31_000n, oracle: true },
     };
   });
 }
@@ -68,12 +68,13 @@ async function load() {
     return;
   }
   const pks = MARKET_IDS.map(P.marketPda);
-  const infos = await conn.getMultipleAccountsInfo([...pks, ...pks.map(P.historyPda)]);
+  const infos = await conn.getMultipleAccountsInfo([...pks, ...pks.map(P.historyPda), ...pks.map(P.indexPda)]);
   const markets = [];
   pks.forEach((pk, i) => {
-    const mi = infos[i], hi = infos[i + pks.length];
+    const mi = infos[i], hi = infos[i + pks.length], xi = infos[i + 2 * pks.length];
     if (!mi || !P.hasDisc(mi.data, "Market")) return;
-    markets.push({ pk, m: P.decodeMarket(mi.data), hist: hi ? P.decodeHistory(hi.data) : [] });
+    const idx = xi && P.hasDisc(xi.data, "Index") ? P.decodeIndex(xi.data) : null;
+    markets.push({ pk, m: P.decodeMarket(mi.data), hist: hi ? P.decodeHistory(hi.data) : [], idx });
   });
   state.markets = markets;
   if (!markets.length) {
@@ -114,6 +115,10 @@ function positionView(x) {
 const pendingOf = (m) => ({ long: m.pendLongDep[0] + m.pendLongDep[1], short: m.pendShortDep[0] + m.pendShortDep[1] });
 
 // ------------------------------------------------------------ render
+const livePlayers = (x) => (x.idx && x.idx.lastRaw ? x.idx.lastRaw : x.m.price);
+const sourceBadge = (x) => x.idx?.oracle
+  ? `<span style="color:var(--up)">✓ Switchboard-verified</span>`
+  : `<span>keeper data</span>`;
 const GLYPH = ["linear-gradient(135deg,#ff8a1f,#ff4d2e)", "linear-gradient(135deg,#e0483e,#7a1d16)", "linear-gradient(135deg,#f2b33d,#a0661a)", "linear-gradient(135deg,#d6336c,#5c1230)", "linear-gradient(135deg,#ff6b3d,#8a2a10)"];
 const initials = (n) => n.split(/[\s:-]+/).filter(Boolean).map((w) => w[0]).join("").slice(0, 3).toUpperCase();
 
@@ -143,7 +148,8 @@ function render() {
     return `<button class="mcard" data-id="${x.m.id}">
       <div class="mhead"><span class="glyph" style="background:${GLYPH[k % GLYPH.length]}">${initials(x.m.name)}</span>
         <div><div class="mname">${x.m.name}</div><div class="msub">${x.m.leverage}x · updated ${ago(x.m.lastUpdate)}</div></div></div>
-      <div class="mprice"><b>${fmtN(x.m.price)}</b><span class="u">players</span><span class="chg ${ch >= 0 ? "up" : "down"}">${ch >= 0 ? "+" : ""}${ch.toFixed(2)}%</span></div>
+      <div class="mprice"><b>${fmtN(livePlayers(x))}</b><span class="u">playing now</span><span class="chg ${ch >= 0 ? "up" : "down"}">${ch >= 0 ? "+" : ""}${ch.toFixed(2)}%</span></div>
+      <div class="msub">24h index <b style="color:var(--text)">${fmtN(x.m.price)}</b> · ${sourceBadge(x)}</div>
       ${chartSvg(vals.length > 1 ? vals : [first, first], 300, 70, "spark")}
       <div class="mfoot"><span>Pools <b>${P.fmtSol(x.m.longBalance + x.m.shortBalance)} SOL</b></span><span class="tbtn">Trade ›</span></div>
       <div class="pools"><i style="width:${(lb / tot) * 100}%;background:var(--up)"></i><i style="width:${(sb / tot) * 100}%;background:var(--down)"></i></div>
@@ -186,12 +192,13 @@ function renderSheet() {
   }
   $("panel").innerHTML = `<div class="grab"></div>
     <div class="row"><span class="mname" style="font-size:20px">${x.m.name}</span><span class="net">${x.m.leverage}x PERPETUAL</span></div>
-    <div class="mprice"><b>${fmtN(x.m.price)}</b><span class="u">players right now</span></div>
+    <div class="mprice"><b>${fmtN(livePlayers(x))}</b><span class="u">players right now</span></div>
+    <div class="msub">You trade the <b style="color:var(--text)">24h average: ${fmtN(x.m.price)}</b> · ${sourceBadge(x)}</div>
     ${chartSvg(vals.length > 1 ? vals : [1, 1], 600, 160, "chart")}
-    <div class="axis"><span>${first ? new Date(first.time * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : ""}</span><span>live Steam data · on-chain</span><span>${last ? new Date(last.time * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : ""}</span></div>
+    <div class="axis"><span>${first ? new Date(first.time * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : ""}</span><span>24h index · on-chain</span><span>${last ? new Date(last.time * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : ""}</span></div>
     <div class="stat">
-      <div><span>If players +1%, longs earn</span><b class="up">+${(sens.longGain * 100).toFixed(2)}%</b></div>
-      <div><span>If players −1%, shorts earn</span><b class="up">+${(sens.shortGain * 100).toFixed(2)}%</b></div>
+      <div><span>If the index +1%, longs earn</span><b class="up">+${(sens.longGain * 100).toFixed(2)}%</b></div>
+      <div><span>If the index −1%, shorts earn</span><b class="up">+${(sens.shortGain * 100).toFixed(2)}%</b></div>
       <div><span>Long pool</span><b>${P.fmtSol(x.m.longBalance)} SOL${joining(pend.long)}</b></div>
       <div><span>Short pool</span><b>${P.fmtSol(x.m.shortBalance)} SOL${joining(pend.short)}</b></div>
     </div>

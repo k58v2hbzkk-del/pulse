@@ -20,10 +20,11 @@ Every perp DEX trades the same thing: token prices. Prediction markets trade yes
 
 Each market has a **LONG pool** and a **SHORT pool**, funded in SOL.
 
-1. A keeper posts the live index on-chain every minute (Steam's public player-count API).
-2. When the index moves, value flows **from the losing pool to the winning pool**, scaled by the market's leverage. The transfer is `x / (1 + x)` of the losing pool, where `x = leverage × |move|`: about linear for small moves, and never more than 100%, so a pool is never wiped out.
-3. Traders hold **shares** of a pool. Share value rises and falls with the pool.
-4. **Fair fills:** orders are queued and filled at the share price recorded one full update *after* the update you ordered in. Nobody can trade on a number they already saw.
+1. **Verified data.** Switchboard's oracle network reads Steam's public player-count API and signs the reading. The PULSE program checks it's the canonical quote for that market's feed on the official queue, owned by the Switchboard quote program, and fresh (≤300 slots). Anyone can crank an update; nobody can choose the number.
+2. **24h attention index, computed on-chain.** The program keeps hourly buckets and trades on the 24-hour rolling average. Daily peaks and dips cancel out, so the predictable cycle can't be farmed; only real trends move the price.
+3. When the index moves, value flows **from the losing pool to the winning pool**, scaled by the market's leverage. The transfer is `x / (1 + x)` of the losing pool, where `x = leverage × |move|`: about linear for small moves, and never more than 100%, so a pool is never wiped out.
+4. Traders hold **shares** of a pool. Share value rises and falls with the pool.
+5. **Fair fills:** orders are queued and filled at the share price recorded one full update *after* the update you ordered in. Nobody can trade on a number they already saw.
 
 **Always a counterparty — the Backstop.** A one-sided market has no one to pay winners, so the keeper runs a Backstop that automatically takes the thinner side (matching user flow up to a per-market cap, never holding both sides). Solo traders can win even when nobody else is online. On devnet it runs on free faucet SOL; on mainnet it becomes a vault anyone can deposit into to earn trading fees.
 
