@@ -2,7 +2,7 @@
 
 [![Audit](https://github.com/k58v2hbzkk-del/pulse/actions/workflows/audit.yml/badge.svg)](https://github.com/k58v2hbzkk-del/pulse/actions/workflows/audit.yml) [![Tests](https://github.com/k58v2hbzkk-del/pulse/actions/workflows/ci.yml/badge.svg)](https://github.com/k58v2hbzkk-del/pulse/actions/workflows/ci.yml)
 
-**Perpetual markets on what the internet is paying attention to.** Go long or short on live attention data, starting with real-time Steam player counts. Built on Solana for the Solana Foundation *Perps and Prediction Markets* hackathon.
+**Perpetual markets and 1v1 duels on what the internet is paying attention to.** Go long or short on live attention data (Steam players, Twitch viewers, GitHub star momentum, Wikipedia views), or challenge anyone to a duel on where a number lands. Built on Solana for the Solana Foundation *Perps and Prediction Markets* hackathon.
 
 > Will Marvel Rivals keep growing tonight? Is Counter-Strike past its daily peak? Today you can only have an opinion. On PULSE you can take a position.
 
@@ -46,6 +46,10 @@ keeper/           oracle keeper + setup scripts (Node)
 
 Program ID (devnet): `FEf5G58pDPipsFQJJzUTqHrnPkHaXqS2HABaU5Po9kTx`
 
+## DUEL mode (prediction markets)
+
+Call it: "Counter-Strike 2 will be ABOVE 600,000 players at Sunday 20:00", stake SOL, share the link. Anyone can take the other side by matching the stake. After the deadline anyone can settle: the program reads the first audited reading posted after the deadline (within 1 hour) and pays the winner the pot minus 1%. Unaccepted duels refund the creator; ties refund both; a duel with no usable reading for 3 days refunds both. The keeper settles every duel automatically.
+
 ## Launch markets
 
 | Market | Index | Leverage |
@@ -55,6 +59,10 @@ Program ID (devnet): `FEf5G58pDPipsFQJJzUTqHrnPkHaXqS2HABaU5Po9kTx`
 | PUBG: Battlegrounds | live Steam players (app 578080) | 3x |
 | Marvel Rivals | live Steam players (app 2767030) | 5x |
 | Apex Legends | live Steam players (app 1172470) | 5x |
+| GTA V, Rust | live Steam players | 3x |
+| Bitcoin, AI, Taylor Swift | English Wikipedia daily views | 3x |
+| Ollama, VS Code | GitHub stars per day (from recent star events) | 2x |
+| Just Chatting, Counter-Strike on Twitch | live viewers, top 100 streams | 3x |
 
 ## Roadmap
 
