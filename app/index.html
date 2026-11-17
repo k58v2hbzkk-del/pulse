@@ -3,229 +3,223 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-<title>PULSE — trade attention</title>
+<title>PULSE — call what happens next</title>
 <meta name="description" content="Go long or short on what the world is playing right now. Perpetual markets on live attention data, on Solana." />
 <meta property="og:title" content="PULSE — trade attention" />
 <meta property="og:description" content="Perpetual markets on live player counts. No expiry, no liquidations, no house." />
 <meta property="og:image" content="./og.png" />
 <meta name="twitter:card" content="summary_large_image" />
 <link rel="icon" href="./icon.png" />
-<meta name="theme-color" content="#0a0a0a" />
+<meta name="theme-color" content="#ffffff" />
 <link rel="preconnect" href="https://fonts.googleapis.com" />
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet" />
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet" />
 <style>
   :root {
-    --bg: #0a0a0a; --card: #131313; --card2: #1a1a1a; --line: #262626; --text: #f5f5f4; --mute: #8a8a87;
-    --brand: #ff8a1f; --brand2: #ffb547; --up: #2fd17d; --down: #f2495c;
-    --mono: "JetBrains Mono", ui-monospace, monospace; --sans: "Inter", system-ui, sans-serif;
+    --bg: #FFFFFF; --soft: #F8F8F7; --card: #FFFFFF; --card2: #F8F8F7; --line: #EDEDED; --ink: #111111; --text: #111111; --muted: #6F6F6F; --mute: #6F6F6F;
+    --orange: #B8440F; --tint: #FBF1EB; --brand: #B8440F; --brand2: #B8440F; --up: #17804B; --down: #C2363F; --upTint: #EAF6EF; --downTint: #FBEDEE;
+    --mono: "JetBrains Mono", ui-monospace, Menlo, monospace; --sans: "Manrope", system-ui, -apple-system, "Segoe UI", sans-serif;
+    --ease: cubic-bezier(.65,0,.2,1);
   }
   * { box-sizing: border-box; margin: 0; padding: 0; }
   html { scroll-behavior: smooth; overflow-x: hidden; }
-  body { background: var(--bg); color: var(--text); font-family: var(--sans); -webkit-font-smoothing: antialiased; overflow-x: hidden; }
+  body { background: var(--bg); color: var(--ink); font-family: var(--sans); -webkit-font-smoothing: antialiased; overflow-x: hidden; }
   button { font: inherit; cursor: pointer; border: 0; color: inherit; background: none; }
   a { color: inherit; }
   .wrap { max-width: 1080px; margin: 0 auto; padding: 0 18px; }
-  nav { position: sticky; top: 0; z-index: 5; background: rgba(10,10,10,.82); backdrop-filter: blur(14px); border-bottom: 1px solid #161616; }
-  nav .wrap { display: flex; align-items: center; justify-content: space-between; height: 64px; }
-  .logo { display: flex; align-items: center; gap: 10px; font-weight: 800; font-size: 22px; letter-spacing: -.6px; }
-  .mark { width: 30px; height: 30px; border-radius: 9px; background: linear-gradient(135deg, var(--brand), var(--brand2)); display: grid; place-items: center; box-shadow: 0 0 22px rgba(255,138,31,.35); }
-  .mark svg { width: 20px; height: 14px; }
-  .net { font-family: var(--mono); font-size: 10px; color: var(--brand2); border: 1px solid #3d2a12; padding: 2px 7px; border-radius: 99px; font-weight: 600; letter-spacing: 0; }
-  .btn { display: inline-flex; align-items: center; gap: 8px; background: linear-gradient(135deg, var(--brand), var(--brand2)); color: #140a00; padding: 12px 18px; border-radius: 12px; font-weight: 700; font-size: 15px; text-decoration: none; box-shadow: 0 8px 28px rgba(255,138,31,.25); }
-  .btn.ghost { background: var(--card); color: var(--text); border: 1px solid var(--line); box-shadow: none; }
-  .btn.sm { padding: 9px 13px; font-size: 13px; border-radius: 10px; white-space: nowrap; }
-  .btn:disabled { opacity: .35; cursor: not-allowed; }
-  .hero { position: relative; padding: 34px 0 10px; }
-  .hero::before { content: ""; position: absolute; inset: -40px -18px auto; height: 520px; background: radial-gradient(closest-side, rgba(255,138,31,.16), transparent 70%); pointer-events: none; }
-  .heroGrid { display: grid; gap: 26px; position: relative; }
-  @media (min-width: 860px) { .heroGrid { grid-template-columns: 1.05fr 1fr; align-items: center; padding: 30px 0; } }
-  .eyebrow { display: inline-flex; align-items: center; gap: 8px; font-size: 12px; color: var(--brand2); background: #1c1309; border: 1px solid #3d2a12; padding: 6px 10px; border-radius: 99px; font-weight: 600; }
-  .eyebrow i { width: 7px; height: 7px; border-radius: 9px; background: var(--up); box-shadow: 0 0 10px var(--up); animation: blink 1.6s infinite; }
-  @keyframes blink { 50% { opacity: .3; } }
-  h1 { font-size: clamp(38px, 9vw, 62px); line-height: 1.02; letter-spacing: -2px; font-weight: 800; margin: 16px 0 14px; }
-  h1 span { background: linear-gradient(135deg, var(--brand), var(--brand2)); -webkit-background-clip: text; background-clip: text; color: transparent; }
-  .lead { color: #b5b5b1; font-size: 17px; line-height: 1.5; max-width: 480px; }
-  .ctas { display: flex; gap: 10px; margin: 22px 0 20px; flex-wrap: wrap; }
-  .trust { display: flex; gap: 16px 22px; flex-wrap: wrap; color: #cfcfcb; font-size: 14px; }
-  .trust div { display: flex; align-items: center; gap: 8px; }
-  .trust svg { width: 18px; height: 18px; color: var(--brand); }
-  .visual { position: relative; height: 340px; perspective: 1000px; }
-  .vcard { position: absolute; background: linear-gradient(180deg, #1b1b1b, #121212); border: 1px solid #2a2a2a; border-radius: 20px; padding: 16px; box-shadow: 0 30px 60px rgba(0,0,0,.6); }
-  .vmain { inset: 18px 8% 40px 6%; transform: rotateX(8deg) rotateY(-12deg) rotateZ(-2deg); }
-  .vchip { right: 2%; top: 0; padding: 10px 14px; transform: rotate(5deg); font-family: var(--mono); font-size: 14px; color: var(--up); border-color: #1f4d33; animation: float 5s ease-in-out infinite; }
-  .vchip2 { left: 0; bottom: 6px; padding: 10px 14px; transform: rotate(-4deg); font-size: 13px; animation: float 6s ease-in-out infinite reverse; }
-  @keyframes float { 50% { translate: 0 -8px; } }
-  .vline { width: 100%; height: 170px; display: block; margin-top: 12px; }
-  section { padding: 42px 0 8px; }
-  .sh { display: flex; align-items: end; justify-content: space-between; gap: 10px; margin-bottom: 16px; }
-  h2 { font-size: clamp(26px, 6vw, 38px); letter-spacing: -1.2px; line-height: 1.08; font-weight: 800; }
-  h2 span { color: var(--brand); }
-  .muted { color: var(--mute); font-size: 14px; line-height: 1.55; }
-  .banner { font-family: var(--mono); font-size: 12px; color: var(--brand2); background: #1c1309; border: 1px solid #3d2a12; border-radius: 12px; padding: 10px 12px; margin: 0 0 14px; line-height: 1.5; }
-  .banner a { color: var(--brand2); }
-  .rail { display: flex; gap: 14px; overflow-x: auto; scroll-snap-type: x mandatory; padding: 4px 18px 16px; margin: 0 -18px; scrollbar-width: none; }
+  nav { position: sticky; top: 0; z-index: 5; background: rgba(255,255,255,.88); backdrop-filter: blur(12px); border-bottom: 1px solid var(--line); }
+  nav .wrap { display: flex; align-items: center; justify-content: space-between; height: 62px; }
+  .logo { display: flex; align-items: center; gap: 9px; font-weight: 800; font-size: 17px; letter-spacing: .02em; }
+  .mark { width: 26px; height: 26px; border-radius: 50%; background: var(--ink); display: grid; place-items: center; position: relative; }
+  .mark::after { content: ""; position: absolute; right: -2px; bottom: -2px; width: 9px; height: 9px; border-radius: 50%; background: var(--orange); border: 2px solid #fff; }
+  .mark svg { width: 16px; height: 12px; }
+  .net { font-family: var(--mono); font-size: 10px; letter-spacing: .12em; color: var(--orange); font-weight: 600; }
+  .navlinks { display: none; gap: 22px; font-size: 14px; color: var(--muted); font-weight: 500; }
+  .navlinks a { text-decoration: none; } .navlinks a:hover { color: var(--ink); }
+  @media (min-width: 760px) { .navlinks { display: flex; } }
+  .btn { display: inline-flex; align-items: center; gap: 8px; background: var(--ink); color: #fff; padding: 12px 20px; border: 1px solid var(--ink); border-radius: 999px; font-weight: 700; font-size: 15px; text-decoration: none; transition: background .25s var(--ease), border-color .25s var(--ease), transform .25s var(--ease); }
+  .btn:hover { background: var(--orange); border-color: var(--orange); transform: translateY(-2px); }
+  .btn.ghost { background: var(--bg); color: var(--ink); border-color: var(--line); }
+  .btn.ghost:hover { border-color: var(--ink); background: var(--bg); }
+  .btn.sm { padding: 8px 15px; font-size: 13px; white-space: nowrap; }
+  .btn:disabled { opacity: .35; cursor: not-allowed; transform: none; }
+  .hero { position: relative; overflow: hidden; margin: 0 -18px; padding: 64px 18px 30px; text-align: center; }
+  #flow { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; opacity: .55; }
+  .hero-in { position: relative; z-index: 1; max-width: 860px; margin: 0 auto; display: grid; justify-items: center; gap: 20px; }
+  .badge { display: inline-flex; align-items: center; gap: 10px; padding: 6px 14px 6px 6px; border: 1px solid var(--line); border-radius: 999px; background: #fff; text-align: left; }
+  .badge .mark { width: 28px; height: 28px; }
+  .badge b { display: block; font-size: 13px; letter-spacing: .02em; } .badge span { font-size: 11px; color: var(--muted); }
+  .live { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--up); margin-right: 5px; vertical-align: middle; }
+  h1 { font-size: clamp(40px, 9.5vw, 82px); font-weight: 800; letter-spacing: -.045em; line-height: 1; text-wrap: balance; }
+  .ul { position: relative; white-space: nowrap; }
+  .ul svg { position: absolute; left: -2%; bottom: -.16em; width: 104%; height: .28em; overflow: visible; }
+  .ul path { fill: none; stroke: var(--orange); stroke-width: 5; stroke-linecap: round; stroke-dasharray: 220; stroke-dashoffset: 220; animation: draw 1s .5s var(--ease) forwards; }
+  @keyframes draw { to { stroke-dashoffset: 0; } }
+  .lead { color: var(--muted); font-size: clamp(16px, 2vw, 19px); line-height: 1.55; max-width: 52ch; }
+  .chips { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; }
+  .chip { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 600; padding: 6px 13px; border: 1px solid var(--line); border-radius: 999px; background: #fff; }
+  .ctas { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; }
+  .heroq { position: relative; z-index: 1; max-width: 520px; margin: 34px auto 0; text-align: left; padding: 8px; border: 1px solid var(--line); border-radius: 26px; background: rgba(255,255,255,.7); box-shadow: 0 30px 60px -30px rgba(17,17,17,.18); }
+  .heroq .pcard { border-radius: 20px; }
+  .heroq:empty { display: none; }
+  section { padding: 56px 0 8px; }
+  .eyebrow { font-family: var(--mono); font-size: 11px; letter-spacing: .14em; text-transform: uppercase; color: var(--orange); font-weight: 600; display: block; margin-bottom: 8px; }
+  .sh { display: flex; align-items: end; justify-content: space-between; gap: 12px; margin-bottom: 18px; }
+  h2 { font-size: clamp(28px, 6vw, 44px); letter-spacing: -.04em; line-height: 1.05; font-weight: 800; }
+  h2 span { color: var(--ink); }
+  .center { text-align: center; } .center .lead, .center .muted { margin-left: auto; margin-right: auto; }
+  .muted { color: var(--muted); font-size: 14px; line-height: 1.6; }
+  .banner { font-family: var(--mono); font-size: 12px; color: var(--orange); background: var(--tint); border-radius: 14px; padding: 10px 14px; margin: 0 0 16px; line-height: 1.5; }
+  .banner a { color: var(--orange); }
+  .seg { display: inline-flex; background: var(--soft); border: 1px solid var(--line); border-radius: 999px; padding: 4px; margin-bottom: 26px; }
+  .seg button { padding: 9px 20px; border-radius: 999px; font-weight: 700; font-size: 14px; color: var(--muted); transition: background .2s, color .2s; }
+  .seg button.on { background: var(--ink); color: #fff; }
+  .cats { display: flex; gap: 8px; overflow-x: auto; margin: -4px -18px 16px; padding: 0 18px; scrollbar-width: none; }
+  .cats::-webkit-scrollbar { display: none; }
+  .cats button { flex: none; padding: 8px 15px; border-radius: 999px; border: 1px solid var(--line); background: #fff; color: var(--ink); font-size: 13px; font-weight: 600; }
+  .cats button.on { background: var(--ink); color: #fff; border-color: var(--ink); }
+  .rail { display: flex; gap: 12px; overflow-x: auto; scroll-snap-type: x mandatory; padding: 4px 18px 16px; margin: 0 -18px; scrollbar-width: none; }
   .rail::-webkit-scrollbar { display: none; }
-  .mcard { flex: 0 0 min(300px, 82vw); scroll-snap-align: start; background: linear-gradient(180deg, #171717, #111); border: 1px solid var(--line); border-radius: 22px; padding: 18px; text-align: left; }
+  .mcard { flex: 0 0 min(300px, 82vw); scroll-snap-align: start; background: #fff; border: 1px solid var(--line); border-radius: 20px; padding: 18px; text-align: left; transition: border-color .2s, transform .25s var(--ease); }
+  .mcard:hover, .pcard:hover { border-color: #d9d9d9; }
   .mhead { display: flex; align-items: center; gap: 12px; }
-  .glyph { width: 42px; height: 42px; border-radius: 13px; display: grid; place-items: center; font-weight: 800; font-size: 15px; color: #fff; letter-spacing: -.5px; flex: none; }
-  .mname { font-weight: 700; font-size: 17px; }
-  .msub { font-size: 12px; color: var(--mute); margin-top: 2px; }
+  .glyph { width: 40px; height: 40px; border-radius: 50%; display: grid; place-items: center; font-weight: 800; font-size: 13px; color: #fff; letter-spacing: -.3px; flex: none; }
+  .mname { font-weight: 700; font-size: 16px; letter-spacing: -.01em; }
+  .msub { font-size: 12px; color: var(--muted); margin-top: 2px; }
   .mprice { display: flex; align-items: baseline; gap: 8px; margin: 16px 0 4px; }
-  .mprice b { font-size: 28px; letter-spacing: -1px; font-weight: 700; }
-  .mprice .u { color: var(--mute); font-size: 13px; }
-  .chg { font-family: var(--mono); font-size: 14px; margin-left: auto; }
+  .mprice b { font-size: 26px; letter-spacing: -.03em; font-weight: 800; }
+  .mprice .u { color: var(--muted); font-size: 13px; }
+  .chg { font-family: var(--mono); font-size: 13px; margin-left: auto; }
   .up { color: var(--up); } .down { color: var(--down); }
-  .spark { width: 100%; height: 70px; display: block; margin: 8px 0 12px; }
-  .mfoot { display: flex; justify-content: space-between; align-items: center; font-size: 13px; color: var(--mute); }
-  .mfoot b { color: var(--text); font-weight: 600; }
-  .tbtn { border: 1px solid var(--line); background: var(--card2); padding: 7px 12px; border-radius: 10px; font-size: 13px; font-weight: 600; color: var(--text); }
-  .pools { display: flex; height: 5px; border-radius: 99px; overflow: hidden; background: var(--line); margin-top: 12px; }
+  .spark { width: 100%; height: 64px; display: block; margin: 8px 0 12px; }
+  .mfoot { display: flex; justify-content: space-between; align-items: center; font-size: 13px; color: var(--muted); }
+  .mfoot b { color: var(--ink); font-weight: 700; }
+  .tbtn { border: 1px solid var(--ink); background: var(--ink); color: #fff; padding: 6px 13px; border-radius: 999px; font-size: 12px; font-weight: 700; }
+  .pools { display: flex; height: 4px; border-radius: 99px; overflow: hidden; background: var(--line); margin-top: 12px; }
   .pools i { height: 100%; }
-  .mine { margin-top: 10px; font-size: 12px; font-family: var(--mono); color: var(--brand2); }
-  .seg { display: inline-flex; background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 4px; margin-bottom: 18px; }
-  .seg button { padding: 10px 20px; border-radius: 10px; font-weight: 700; font-size: 15px; color: var(--mute); }
-  .seg button.on { background: linear-gradient(135deg, var(--brand), var(--brand2)); color: #140a00; }
-  .cats { display: flex; gap: 8px; overflow-x: auto; margin: -4px 0 14px; scrollbar-width: none; }
-  .cats button { flex: none; padding: 8px 14px; border-radius: 99px; border: 1px solid var(--line); background: var(--card); color: var(--mute); font-size: 13px; font-weight: 600; }
-  .cats button.on { color: var(--text); border-color: var(--brand); }
+  .mine { margin-top: 10px; font-size: 12px; font-family: var(--mono); color: var(--orange); }
   .plist { display: grid; gap: 12px; }
   @media (min-width: 760px) { .plist { grid-template-columns: repeat(2, 1fr); } }
-  .pcard { background: var(--card); border: 1px solid var(--line); border-radius: 20px; padding: 16px; display: grid; gap: 12px; }
+  .pcard { background: #fff; border: 1px solid var(--line); border-radius: 20px; padding: 18px; display: grid; gap: 14px; transition: border-color .2s; }
   .ptop { display: grid; grid-template-columns: 40px 1fr auto; gap: 12px; align-items: center; }
-  .ptop .glyph { width: 40px; height: 40px; }
-  .pq { text-align: left; font-size: 16px; font-weight: 700; line-height: 1.3; color: var(--text); letter-spacing: -.2px; }
-  .gauge { --p: 50; width: 62px; height: 62px; border-radius: 50%; display: grid; place-items: center; align-content: center;
-    background: radial-gradient(closest-side, var(--card) 76%, transparent 78%), conic-gradient(var(--up) calc(var(--p) * 1%), #3a1d20 0); }
-  .gauge b { font-family: var(--mono); font-size: 15px; line-height: 1; } .gauge span { font-size: 10px; color: var(--mute); }
-  .psub { font-size: 13px; color: var(--mute); } .psub b { color: var(--text); font-family: var(--mono); font-weight: 600; }
+  .pq { text-align: left; font-size: 16px; font-weight: 700; line-height: 1.3; color: var(--ink); letter-spacing: -.015em; }
+  .gauge { --p: 50; width: 58px; height: 58px; border-radius: 50%; display: grid; place-items: center; align-content: center;
+    background: radial-gradient(closest-side, #fff 80%, transparent 82%), conic-gradient(var(--up) calc(var(--p) * 1%), var(--downTint) 0); }
+  .gauge b { font-family: var(--mono); font-size: 14px; line-height: 1; } .gauge span { font-size: 10px; color: var(--muted); margin-top: 2px; }
+  .psub { font-size: 13px; color: var(--muted); } .psub b { color: var(--ink); font-family: var(--mono); font-weight: 600; }
   .pbtns { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-  .pbtns button { padding: 12px; border-radius: 12px; font-weight: 700; font-size: 15px; display: flex; justify-content: center; gap: 8px; border: 1px solid transparent; }
-  .pbtns b { font-family: var(--mono); }
-  .pyes { background: #0f2a1b; color: var(--up); } .pno { background: #2c1316; color: var(--down); }
-  .pbtns.big button { padding: 16px; font-size: 17px; opacity: .55; } .pbtns.big button.on { opacity: 1; border-color: currentColor; }
-  .pstat { font-size: 14px; color: var(--mute); padding: 10px 12px; background: #101010; border-radius: 12px; }
-  .towin { display: flex; align-items: baseline; gap: 10px; margin: 6px 0 14px; padding: 14px; border: 1px solid var(--line); border-radius: 14px; }
-  .towin b { font-size: 24px; color: var(--up); font-family: var(--mono); } .towin span:first-child { color: var(--mute); font-size: 14px; }
-  .pcard .meta { display: flex; gap: 12px; flex-wrap: wrap; font-family: var(--mono); font-size: 12px; color: var(--mute); }
-  h3.sub { font-size: 15px; color: var(--mute); font-weight: 600; margin: 18px 0 10px; }
+  .pbtns button { padding: 12px; border-radius: 999px; font-weight: 700; font-size: 15px; display: flex; justify-content: center; gap: 8px; border: 1px solid transparent; transition: transform .2s var(--ease); }
+  .pbtns button:hover { transform: translateY(-1px); }
+  .pbtns b { font-family: var(--mono); font-weight: 600; }
+  .pyes { background: var(--upTint); color: var(--up); } .pno { background: var(--downTint); color: var(--down); }
+  .pbtns.big button { padding: 15px; font-size: 16px; opacity: .5; } .pbtns.big button.on { opacity: 1; border-color: currentColor; }
+  .pstat { font-size: 14px; color: var(--muted); padding: 11px 14px; background: var(--soft); border-radius: 14px; }
+  .towin { display: flex; align-items: baseline; gap: 10px; margin: 6px 0 14px; padding: 14px 16px; background: var(--soft); border-radius: 16px; }
+  .towin b { font-size: 24px; color: var(--up); font-family: var(--mono); } .towin span:first-child { color: var(--muted); font-size: 14px; }
+  .pcard .meta, .duel .meta { display: flex; gap: 14px; flex-wrap: wrap; font-family: var(--mono); font-size: 11px; color: var(--muted); letter-spacing: .02em; }
+  h3.sub { font-family: var(--mono); font-size: 11px; letter-spacing: .14em; text-transform: uppercase; color: var(--muted); font-weight: 600; margin: 26px 0 12px; }
   .dlist { display: grid; gap: 10px; }
-  .duel { background: var(--card); border: 1px solid var(--line); border-radius: 18px; padding: 16px; display: grid; gap: 10px; }
-  .duel .claim { font-size: 16px; line-height: 1.45; }
-  .duel .claim b { color: var(--text); }
-  .duel .meta { display: flex; gap: 10px; flex-wrap: wrap; font-family: var(--mono); font-size: 12px; color: var(--mute); }
-  .duel .row2 { display: flex; gap: 8px; flex-wrap: wrap; }
-  .tag { padding: 3px 8px; border-radius: 6px; font-family: var(--mono); font-size: 11px; font-weight: 600; }
-  .empty { color: var(--mute); font-size: 14px; padding: 14px; border: 1px dashed var(--line); border-radius: 14px; }
+  .duel { background: #fff; border: 1px solid var(--line); border-radius: 20px; padding: 18px; display: grid; gap: 12px; }
+  .duel .claim { font-size: 16px; line-height: 1.5; }
+  .duel .row2, .row2 { display: flex; gap: 8px; flex-wrap: wrap; }
+  .tag { padding: 4px 9px; border-radius: 999px; font-family: var(--mono); font-size: 11px; font-weight: 600; background: var(--soft); }
+  .empty { color: var(--muted); font-size: 14px; padding: 18px; border: 1px dashed #dcdcdc; border-radius: 16px; text-align: center; }
   .opt { display: flex; gap: 6px; flex-wrap: wrap; margin: 6px 0 12px; }
-  .opt button { padding: 9px 13px; border-radius: 10px; border: 1px solid var(--line); background: var(--card); color: var(--mute); font-size: 13px; font-weight: 600; }
-  .opt button.on { border-color: var(--brand); color: var(--text); background: #1c1309; }
-  .lbl { font-size: 12px; color: var(--mute); margin-top: 6px; }
+  .opt button { padding: 8px 14px; border-radius: 999px; border: 1px solid var(--line); background: #fff; color: var(--ink); font-size: 13px; font-weight: 600; }
+  .opt button.on { border-color: var(--ink); background: var(--ink); color: #fff; }
+  .lbl { font-family: var(--mono); font-size: 10px; letter-spacing: .14em; text-transform: uppercase; color: var(--muted); margin-top: 10px; }
   .join { display: flex; gap: 8px; margin: 4px 0 6px; }
-  .join input, .send input { flex: 1; min-width: 0; background: var(--card); border: 1px solid var(--line); color: var(--text); border-radius: 12px; padding: 11px 12px; font-size: 14px; }
-  .join input:focus, .send input:focus { outline: none; border-color: var(--brand); }
-  .chat { border-top: 1px solid var(--line); padding-top: 10px; display: grid; gap: 8px; }
+  .join input, .send input { flex: 1; min-width: 0; background: #fff; border: 1px solid var(--line); color: var(--ink); border-radius: 999px; padding: 11px 16px; font-size: 14px; font-family: inherit; }
+  .join input:focus, .send input:focus, .amt input:focus { outline: none; border-color: var(--ink); }
+  .chat { border-top: 1px solid var(--line); padding-top: 12px; display: grid; gap: 8px; margin-top: 6px; }
   .msgs { max-height: 220px; overflow-y: auto; display: grid; gap: 6px; }
-  .msg { background: #101010; border: 1px solid var(--line); border-radius: 12px; padding: 8px 10px; font-size: 14px; line-height: 1.4; max-width: 88%; }
-  .msg span { display: block; font-family: var(--mono); font-size: 11px; color: var(--mute); margin-bottom: 2px; }
-  .msg.me { justify-self: end; border-color: #3d2a12; background: #1c1309; }
+  .msg { background: var(--soft); border-radius: 16px; padding: 8px 12px; font-size: 14px; line-height: 1.45; max-width: 88%; }
+  .msg span { display: block; font-family: var(--mono); font-size: 10px; color: var(--muted); margin-bottom: 2px; }
+  .msg.me { justify-self: end; background: var(--tint); }
   .send { display: flex; gap: 8px; }
-  .board { background: var(--card); border: 1px solid var(--line); border-radius: 18px; padding: 6px 14px; }
-  .lrow { display: grid; grid-template-columns: 24px 1fr auto auto; gap: 12px; align-items: center; padding: 10px 0; border-bottom: 1px solid var(--line); font-size: 14px; }
+  .board { background: #fff; border: 1px solid var(--line); border-radius: 20px; padding: 4px 16px; }
+  .lrow { display: grid; grid-template-columns: 24px 1fr auto auto; gap: 12px; align-items: center; padding: 12px 0; border-bottom: 1px solid var(--line); font-size: 14px; }
   .lrow:last-child { border-bottom: 0; }
-  .lrow b { color: var(--brand); font-family: var(--mono); }
+  .lrow b { color: var(--orange); font-family: var(--mono); }
   .lrow .up { font-family: var(--mono); }
-  .feats { display: grid; gap: 14px; }
+  .feats { display: grid; gap: 12px; }
   @media (min-width: 760px) { .feats { grid-template-columns: repeat(2, 1fr); } }
-  .feat { background: var(--card); border: 1px solid var(--line); border-radius: 22px; padding: 22px; }
-  .ficon { width: 44px; height: 44px; border-radius: 12px; background: #1d140a; border: 1px solid #3d2a12; display: grid; place-items: center; color: var(--brand); margin-bottom: 16px; }
-  .ficon svg { width: 22px; height: 22px; }
-  .feat h3 { font-size: 20px; letter-spacing: -.5px; margin-bottom: 8px; font-weight: 700; }
-  .dotted { position: relative; overflow: hidden; text-align: center; background: radial-gradient(circle at 50% 0%, rgba(255,138,31,.14), transparent 60%), var(--card); }
-  .dotted::before { content: ""; position: absolute; inset: 0; background-image: radial-gradient(#2c2c2c 1px, transparent 1px); background-size: 16px 16px; opacity: .7; }
-  .dotted > * { position: relative; }
-  .dotted h3 { color: var(--brand); font-size: 26px; }
+  .feat { background: var(--soft); border-radius: 22px; padding: 26px; }
+  .feat .num { font-family: var(--mono); font-size: 11px; color: var(--orange); letter-spacing: .14em; display: block; margin-bottom: 18px; }
+  .feat h3 { font-size: 20px; letter-spacing: -.02em; margin-bottom: 8px; font-weight: 800; }
   .steps { display: grid; gap: 12px; counter-reset: s; }
   @media (min-width: 760px) { .steps { grid-template-columns: repeat(4, 1fr); } }
-  .step { background: var(--card); border: 1px solid var(--line); border-radius: 18px; padding: 18px; }
-  .step::before { counter-increment: s; content: "0" counter(s); font-family: var(--mono); color: var(--brand); font-size: 13px; display: block; margin-bottom: 10px; }
-  .step b { display: block; margin-bottom: 6px; font-size: 16px; }
-  .faq { background: var(--card); border: 1px solid var(--line); border-radius: 24px; padding: 22px 16px; }
-  .faq h2 { padding: 0 4px 14px; }
-  details { border: 1px solid var(--line); border-radius: 14px; padding: 14px 16px; margin-top: 10px; background: #101010; }
-  summary { list-style: none; cursor: pointer; font-weight: 600; font-size: 15px; display: flex; justify-content: space-between; gap: 10px; }
+  .step { background: #fff; border: 1px solid var(--line); border-radius: 20px; padding: 20px; }
+  .step::before { counter-increment: s; content: "0" counter(s); font-family: var(--mono); color: var(--orange); font-size: 12px; display: block; margin-bottom: 14px; letter-spacing: .1em; }
+  .step b { display: block; margin-bottom: 6px; font-size: 16px; letter-spacing: -.01em; }
+  .faq { max-width: 760px; margin: 0 auto; }
+  .faq h2 { margin-bottom: 18px; text-align: center; }
+  details { border-bottom: 1px solid var(--line); padding: 18px 2px; }
+  summary { list-style: none; cursor: pointer; font-weight: 700; font-size: 16px; display: flex; justify-content: space-between; gap: 10px; letter-spacing: -.01em; }
   summary::-webkit-details-marker { display: none; }
-  summary::after { content: "⌄"; color: var(--mute); transition: transform .2s; }
-  details[open] summary::after { transform: rotate(180deg); }
+  summary::after { content: "+"; color: var(--muted); font-weight: 500; font-size: 20px; line-height: 1; transition: transform .25s var(--ease); }
+  details[open] summary::after { transform: rotate(45deg); }
   details p { margin-top: 10px; }
-  footer { padding: 40px 0 60px; text-align: center; color: var(--mute); font-size: 13px; }
-  footer a { color: var(--text); text-decoration: none; font-weight: 600; }
-  .sheet { position: fixed; inset: 0; background: rgba(0,0,0,.65); display: none; align-items: flex-end; justify-content: center; z-index: 10; }
+  footer { padding: 56px 0 64px; text-align: center; color: var(--muted); font-size: 13px; border-top: 1px solid var(--line); margin-top: 56px; }
+  footer a { color: var(--ink); text-decoration: none; font-weight: 700; }
+  .sheet { position: fixed; inset: 0; background: rgba(17,17,17,.35); backdrop-filter: blur(3px); display: none; align-items: flex-end; justify-content: center; z-index: 10; }
   .sheet.open { display: flex; }
-  .panel { background: #0f0f0f; border: 1px solid var(--line); border-bottom: 0; border-radius: 24px 24px 0 0; width: 100%; max-width: 520px; max-height: 92vh; overflow: auto; padding: 18px 16px calc(24px + env(safe-area-inset-bottom)); }
-  @media (min-width: 760px) { .sheet { align-items: center; } .panel { border-radius: 24px; border-bottom: 1px solid var(--line); } }
-  .grab { width: 40px; height: 4px; background: var(--line); border-radius: 9px; margin: 0 auto 14px; }
+  .panel { background: #fff; border-radius: 26px 26px 0 0; width: 100%; max-width: 520px; max-height: 92vh; overflow: auto; padding: 18px 18px calc(24px + env(safe-area-inset-bottom)); }
+  @media (min-width: 760px) { .sheet { align-items: center; } .panel { border-radius: 26px; } }
+  .grab { width: 38px; height: 4px; background: var(--line); border-radius: 9px; margin: 0 auto 16px; }
   .chart { width: 100%; height: 170px; display: block; margin: 12px 0 4px; }
-  .axis { display: flex; justify-content: space-between; font-family: var(--mono); font-size: 10px; color: var(--mute); }
+  .axis { display: flex; justify-content: space-between; font-family: var(--mono); font-size: 10px; color: var(--muted); }
   .stat { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 14px 0; }
-  .stat div { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 10px 12px; }
-  .stat b { display: block; font-family: var(--mono); font-size: 16px; margin-top: 3px; }
-  .stat span { font-size: 11px; color: var(--mute); }
-  .amt input { width: 100%; background: var(--card); border: 1px solid var(--line); color: var(--text); border-radius: 12px; padding: 13px; font-family: var(--mono); font-size: 18px; margin: 8px 0 10px; }
-  .amt input:focus { outline: none; border-color: var(--brand); }
-  .chips { display: flex; gap: 6px; margin-bottom: 12px; }
-  .chips button { background: var(--card); border: 1px solid var(--line); color: var(--mute); font-family: var(--mono); font-size: 12px; padding: 6px 11px; border-radius: 99px; }
+  .stat div { background: var(--soft); border-radius: 14px; padding: 10px 12px; }
+  .stat b { display: block; font-family: var(--mono); font-size: 15px; margin-top: 3px; }
+  .stat span { font-size: 11px; color: var(--muted); }
+  .amt input { width: 100%; background: #fff; border: 1px solid var(--line); color: var(--ink); border-radius: 14px; padding: 13px 14px; font-family: var(--mono); font-size: 18px; margin: 8px 0 10px; }
+  .chips2, .sheet .chips { display: flex; gap: 6px; margin-bottom: 12px; justify-content: flex-start; }
+  .sheet .chips button { background: #fff; border: 1px solid var(--line); color: var(--ink); font-family: var(--mono); font-size: 12px; padding: 6px 12px; border-radius: 999px; }
   .trade { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-  .trade button { padding: 15px; border-radius: 14px; font-weight: 800; font-size: 16px; color: #050505; }
-  .goLong { background: var(--up); } .goShort { background: var(--down); color: #fff !important; }
+  .trade button { padding: 15px; border-radius: 999px; font-weight: 800; font-size: 16px; color: #fff; }
+  .goLong { background: var(--up); } .goShort { background: var(--down); }
   .trade button:disabled, .close2 button:disabled { opacity: .35; }
   .close2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 8px; }
-  .hint { font-size: 12px; color: var(--mute); line-height: 1.5; margin-top: 12px; }
-  .toast { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); background: var(--text); color: #000; padding: 11px 15px; border-radius: 12px; font-size: 13px; font-weight: 500; z-index: 20; max-width: 92vw; display: none; }
-  .toast a { color: #000; font-weight: 700; }
+  .hint { font-size: 12px; color: var(--muted); line-height: 1.55; margin-top: 12px; }
+  .toast { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); background: var(--ink); color: #fff; padding: 12px 18px; border-radius: 999px; font-size: 13px; font-weight: 600; z-index: 20; max-width: 92vw; display: none; }
+  .toast a { color: #fff; font-weight: 800; }
 </style>
 </head>
 <body>
 <nav><div class="wrap">
-  <div class="logo"><span class="mark"><svg viewBox="0 0 20 14" fill="none"><path d="M1 8h4l2-6 3 10 3-8 2 4h4" stroke="#140a00" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg></span>PULSE <span class="net">DEVNET</span></div>
+  <div class="logo"><span class="mark"><svg viewBox="0 0 20 14" fill="none"><path d="M1 8h4l2-6 3 10 3-8 2 4h4" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg></span>PULSE <span class="net">DEVNET</span></div>
+  <div class="navlinks"><a href="#markets">Predict</a><a href="#markets" data-go="perps">Perps</a><a href="#markets" data-go="duels">Duels</a><a href="#how">How it works</a></div>
   <button class="btn sm" id="connect">Connect</button>
 </div></nav>
 
 <main class="wrap">
-  <div class="hero"><div class="heroGrid">
-    <div>
-      <span class="eyebrow"><i></i> Live on Solana devnet · free to try</span>
-      <h1>Trade what the world is <span>watching.</span></h1>
-      <p class="lead">Bet yes or no on live numbers: Bitcoin up or down this hour, CS2 above 750k tonight, London warmer than 12°C. Or go long and short, or duel a friend. Real SOL on Solana, settled on-chain from audited data.</p>
-      <div class="ctas"><a class="btn" href="#markets">Start Trading →</a><a class="btn ghost" href="#how">How it works</a></div>
-      <div class="trust">
-        <div><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6l8-3z"/><path d="M9 12l2 2 4-4"/></svg>Non-custodial</div>
-        <div><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M5 19L19 5"/></svg>No liquidations</div>
-        <div><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12h4l3-8 4 16 3-8h4"/></svg>Publicly audited data</div>
-      </div>
+  <div class="hero"><canvas id="flow" aria-hidden="true"></canvas>
+    <div class="hero-in">
+      <div class="badge"><span class="mark"><svg viewBox="0 0 20 14" fill="none"><path d="M1 8h4l2-6 3 10 3-8 2 4h4" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg></span><div><b>PULSE</b><span><i class="live"></i>Live on Solana devnet · free to try</span></div></div>
+      <h1>Call what happens <span class="ul">next.<svg viewBox="0 0 200 20" preserveAspectRatio="none" aria-hidden="true"><path d="M4 14 C 50 4, 120 4, 196 12"></path></svg></span></h1>
+      <p class="lead">Bitcoin up or down this hour. CS2 above 750k tonight. London warmer than 12°C. Pick a side with real SOL, and the program pays the winners from audited live data.</p>
+      <div class="chips"><span class="chip">Up or Down</span><span class="chip">Crypto prices</span><span class="chip">Games</span><span class="chip">Weather</span><span class="chip">1v1 duels</span></div>
+      <div class="ctas"><a class="btn" href="#markets">Start predicting ↗</a><a class="btn ghost" href="#how">How it works</a></div>
     </div>
-    <div class="visual" aria-hidden="true">
-      <div class="vcard vmain" id="heroCard"></div>
-      <div class="vcard vchip">LONG +12.4%</div>
-      <div class="vcard vchip2"><span class="muted" style="font-size:11px">Playing now</span><br><b style="font-family:var(--mono)" id="heroPlayers">—</b></div>
-    </div>
-  </div></div>
+    <div class="heroq" id="heroQ"></div>
+  </div>
 
   <section id="markets">
     <div class="seg" id="seg"><button data-tab="predict" class="on">Predict</button><button data-tab="perps">Perps</button><button data-tab="duels">Duels</button></div>
     <div class="banner" id="banner" hidden></div>
     <div id="predictTab">
-      <div class="sh"><div><h2>Predict <span>yes / no</span></h2><p class="muted" style="margin-top:6px">Bitcoin up or down this hour? CS2 above 750k tonight? Pick a side. Odds move as people bet.</p></div>
+      <div class="sh"><div><span class="eyebrow">Predict</span><h2>Yes or no?</h2><p class="muted" style="margin-top:6px">Bitcoin up or down this hour? CS2 above 750k tonight? Pick a side. Odds move as people bet.</p></div>
         <button class="btn sm" id="newQ">Ask</button></div>
       <div class="cats" id="pcats"></div>
       <div class="plist" id="preds"></div>
     </div>
     <div id="perpsTab" hidden>
-      <div class="sh"><div><h2>Markets <span>live</span></h2><p class="muted" style="margin-top:6px">Swipe. Tap a market to go long or short.</p></div></div>
+      <div class="sh"><div><span class="eyebrow">Perps</span><h2>Go long or short</h2><p class="muted" style="margin-top:6px">Every market follows one live number. No expiry, no liquidations. Swipe and tap one.</p></div></div>
       <div class="cats" id="cats"></div>
       <div class="rail" id="list"></div>
     </div>
     <div id="duelsTab" hidden>
-      <div class="sh"><div><h2>Duels <span>1v1</span></h2><p class="muted" style="margin-top:6px">Call where a number lands. Someone takes the other side. The program pays the winner.</p></div>
+      <div class="sh"><div><span class="eyebrow">Duels</span><h2>Call it, 1v1</h2><p class="muted" style="margin-top:6px">Call where a number lands. Someone takes the other side. The program pays the winner.</p></div>
         <button class="btn sm" id="newDuel">New duel</button></div>
       <div class="join"><input id="joinCode" placeholder="Have a join code? e.g. 7Hk2Pq-X9F3KD" autocapitalize="characters" /><button class="btn ghost sm" id="joinBtn">Join</button></div>
       <h3 class="sub">Open challenges</h3><div class="dlist" id="openDuels"></div>
@@ -235,45 +229,42 @@
   </section>
 
   <section>
+    <div class="center" style="margin-bottom:22px"><span class="eyebrow">Why it's fair</span><h2>Built so nobody gets played</h2></div>
     <div class="feats">
-      <div class="feat"><div class="ficon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="6" width="18" height="13" rx="3"/><path d="M16 12h2M3 9h18"/></svg></div>
-        <h3>No broker, no expiry</h3><p class="muted">Trade straight from your wallet. Positions never expire. Hold for a minute or a month.</p></div>
-      <div class="feat"><div class="ficon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v20M5 9l7-7 7 7"/></svg></div>
-        <h3>Nobody is owed what isn't there</h3><p class="muted">Winners are paid from the other side's pool. No house, no liquidity providers, no bad debt. Your loss is capped at the SOL you put in.</p></div>
-      <div class="feat"><div class="ficon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 12h16M12 4v16"/><circle cx="12" cy="12" r="9"/></svg></div>
-        <h3>Always a counterparty</h3><p class="muted">When a market is one-sided, the PULSE Backstop takes the other side of your trade, so you can win even when nobody else is online.</p></div>
-      <div class="feat dotted"><h3>Fair fills</h3><p class="muted" style="margin-top:8px">Orders fill at the price after the next update, so nobody trades on a number they already saw.</p></div>
+      <div class="feat"><span class="num">01</span><h3>Your wallet, your SOL</h3><p class="muted">No sign-up, no broker. Every bet sits in an on-chain account and pays straight back to your wallet.</p></div>
+      <div class="feat"><span class="num">02</span><h3>Nobody is owed what isn't there</h3><p class="muted">Winners are paid from the losing side's pool, never from thin air. No bad debt, no liquidations. You can't lose more than you put in.</p></div>
+      <div class="feat"><span class="num">03</span><h3>Always someone on the other side</h3><p class="muted">The PULSE House seeds both sides of every question and the Backstop takes the thin side of perps, so you can play even when nobody else is online.</p></div>
+      <div class="feat"><span class="num">04</span><h3>Numbers anyone can check</h3><p class="muted">Readings come from public sources (CoinGecko, Steam, Open-Meteo and more), move at most 15% per update, and a public auditor checks them every hour.</p></div>
     </div>
   </section>
 
   <section id="how">
-    <h2 style="margin-bottom:16px">How it <span>works</span></h2>
+    <div class="center" style="margin-bottom:22px"><span class="eyebrow">How it works</span><h2>Four steps, no sign-up</h2></div>
     <div class="steps">
-      <div class="step"><b>Pick a market</b><span class="muted">Each market tracks one live number: players in a game, viewers on a stream, views of a topic, money flowing into a crypto narrative.</span></div>
-      <div class="step"><b>Go long or short</b><span class="muted">Longs sit in one pool, shorts in the other. Each market has fixed leverage.</span></div>
-      <div class="step"><b>The index moves</b><span class="muted">Every minute, verified data updates the 24h index and value flows from the losing pool to the winning pool.</span></div>
-      <div class="step"><b>Close anytime</b><span class="muted">Your share of the pool is paid back to your wallet.</span></div>
+      <div class="step"><b>Connect a wallet</b><span class="muted">Phantom or any Solana wallet. Grab free devnet SOL from the faucet.</span></div>
+      <div class="step"><b>Pick a question</b><span class="muted">Bitcoin up or down this hour, a game's player count tonight, tomorrow's weather, and more.</span></div>
+      <div class="step"><b>Buy Yes or No</b><span class="muted">The % is how the money is split right now. The fewer people on your side, the more you win.</span></div>
+      <div class="step"><b>Get paid automatically</b><span class="muted">When it ends, the program reads the live number and sends winnings straight to your wallet.</span></div>
     </div>
   </section>
 
   <section>
     <div class="faq">
-      <h2>FAQ</h2>
-      <details open><summary>What can I trade?</summary><p class="muted">Live player counts of major games on Steam. More attention indexes (views, streams, searches) are on the roadmap.</p></details>
+      <span class="eyebrow center">FAQ</span><h2>Questions people ask</h2>
+      <details open><summary>What can I bet on?</summary><p class="muted">Crypto prices (BTC, ETH, SOL, BNB, XRP, DOGE), total crypto market cap and Bitcoin dominance, Crypto Fear &amp; Greed, Solana TPS, money flowing into crypto narratives, live player counts of big games, city temperatures, Wikipedia views and GitHub momentum. New questions open every hour.</p></details>
       <details><summary>How do predictions work?</summary><p class="muted">Every question is YES or NO about a live number, like "Will Bitcoin be above $95,000 on Sunday?". Your SOL goes into the YES pool or the NO pool, and the % you see is YES's share of all the money. When the question ends, the program reads the first audited number after the deadline and the winning side splits the whole pot by stake (minus 1%). Winnings land in your wallet automatically. If nobody took the other side, everyone is refunded. The PULSE House opens new questions all the time and puts SOL on both sides, so there are always odds and always someone to bet against.</p></details>
       <details><summary>Can I make my own question?</summary><p class="muted">Yes. Tap Ask, pick any market, choose above or below a number and when it ends, then place the first bet. Share the link and anyone can take the other side.</p></details>
       <details><summary>Where does the data come from? Can anyone fake it?</summary><p class="muted">A keeper reads Steam's public player-count API every minute and posts it on-chain. Cheating is pointless by design: the program caps how far any reading can move (15%), and you trade the 24-hour average, so one fake reading moves the price by about 0.01%. Faking a real move would take hours in public, and you can exit any time. A public auditor also checks every on-chain reading against Steam every hour (<a href="https://github.com/k58v2hbzkk-del/pulse/actions/workflows/audit.yml" target="_blank" rel="noopener" style="color:var(--brand2)">see the audit log</a>). The program is built to plug in a fully verified feed (zkTLS) for mainnet.</p></details>
       <details><summary>Why a 24-hour average?</summary><p class="muted">Every game peaks and dips at the same hours each day. If you traded the raw number, people could farm that predictable cycle. The program averages the last 24 hours on-chain, so the daily cycle cancels out and only real trends move the price: a game growing, dying, or blowing up at launch.</p></details>
       <details><summary>Who do I win from if nobody else is trading?</summary><p class="muted">The PULSE Backstop. It automatically takes the opposite side of one-sided markets (up to 0.5 SOL per market on devnet). On mainnet it becomes a vault anyone can deposit into to earn trading fees.</p></details>
       <details><summary>How do duels work?</summary><p class="muted">Pick a market, call ABOVE or BELOW a number at a time you choose, and lock your SOL. Anyone can take the other side by matching your stake. After the deadline the program reads the first audited reading and pays the winner the whole pot (minus a 1% fee). Nobody accepts? You get your SOL back. Share the duel link to challenge a friend, or make it private: only people with your join code can take it. Every duel and market has its own on-chain chat.</p></details>
-      <details><summary>What can I trade besides games?</summary><p class="muted">Live Steam player counts, Wikipedia daily views for big topics (Bitcoin, AI, Taylor Swift), GitHub star momentum for popular repos, and Twitch viewers by category.</p></details>
-      <details><summary>Can I get liquidated?</summary><p class="muted">No. You hold a share of a pool. It shrinks when you're wrong, but it never goes below zero and nobody force-closes you.</p></details>
+            <details><summary>Can I get liquidated?</summary><p class="muted">No. You hold a share of a pool. It shrinks when you're wrong, but it never goes below zero and nobody force-closes you.</p></details>
       <details><summary>What do I trade with?</summary><p class="muted">Not yet. PULSE runs on Solana devnet, so you trade with devnet SOL, which is free. Tap "Get free devnet SOL" inside any market.</p></details>
       <details><summary>Why does my order take a couple of minutes?</summary><p class="muted">Fair fills. Your order fills at the price after the next update, so nobody can trade on data they already saw.</p></details>
     </div>
   </section>
 
-  <footer>PULSE · perpetual markets on attention · built by <a href="https://x.com/Tajudeen" target="_blank" rel="noopener">Tajudeen @Tajudeen</a></footer>
+  <footer>PULSE · predictions, perps and duels on live numbers · built by <a href="https://x.com/Tajudeen" target="_blank" rel="noopener">Tajudeen @Tajudeen</a></footer>
 </main>
 
 <div class="sheet" id="sheet"><div class="panel" id="panel"></div></div>

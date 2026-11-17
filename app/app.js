@@ -168,18 +168,12 @@ const livePlayers = (x) => (x.idx && x.idx.lastRaw ? x.idx.lastRaw : x.m.price);
 const sourceBadge = (x) => x.idx?.oracle
   ? `<span style="color:var(--up)">✓ Switchboard-verified</span>`
   : `<a href="https://github.com/k58v2hbzkk-del/pulse/actions/workflows/audit.yml" target="_blank" rel="noopener" style="color:var(--brand2);text-decoration:none">audited hourly ↗</a>`;
-const GLYPH = ["linear-gradient(135deg,#ff8a1f,#ff4d2e)", "linear-gradient(135deg,#e0483e,#7a1d16)", "linear-gradient(135deg,#f2b33d,#a0661a)", "linear-gradient(135deg,#d6336c,#5c1230)", "linear-gradient(135deg,#ff6b3d,#8a2a10)"];
+const GLYPH = ["#111111", "#B8440F", "#3A3A3A", "#7A2E0B"];
 const initials = (n) => n.split(/[\s:-]+/).filter(Boolean).map((w) => w[0]).join("").slice(0, 3).toUpperCase();
 
 function render() {
-  const top = state.markets[0];
-  if (top) {
-    const vals = top.hist.map((h) => Number(h.price));
-    $("heroCard").innerHTML = `<div class="mhead"><span class="glyph" style="background:${GLYPH[0]}">${initials(top.m.name)}</span>
-      <div><div class="mname">${top.m.name}</div><div class="msub">${top.m.leverage}x perpetual</div></div></div>
-      ${chartSvg(vals.length > 1 ? vals : [1, 1], 400, 170, "vline")}`;
-    $("heroPlayers").textContent = fmtV(top.m.id, top.m.price);
-  }
+  const hq = [...state.preds].filter((x) => x.p.state === 0 && Date.now() / 1000 < x.p.deadline - 600).sort((a, b) => Number(b.p.yesPool + b.p.noPool) - Number(a.p.yesPool + a.p.noPool))[0];
+  $("heroQ").innerHTML = hq ? predCard(hq, 0) : "";
   $("cats").innerHTML = CATS.filter(([c]) => c === "all" || state.markets.some((x) => META[x.m.id]?.cat === c))
     .map(([c, l]) => `<button data-cat="${c}" class="${c === cat ? "on" : ""}">${l}</button>`).join("");
   document.querySelectorAll("#cats button").forEach((b) => (b.onclick = () => { cat = b.dataset.cat; render(); }));
@@ -229,7 +223,7 @@ function renderSheet() {
   const pv = positionView(x);
   const joining = (v) => (v ? ` <span style="font-size:11px;color:var(--brand2)">+${P.fmtSol(v)} joining</span>` : "");
   const yours = pv && (pv.longVal || pv.shortVal || pv.order) ? `<div class="stat" style="grid-template-columns:1fr">
-      <div style="border-color:#3d2a12;background:#1c1309"><span>Your position</span>
+      <div style="border-color:#F1D6C6;background:var(--tint)"><span>Your position</span>
       ${pv.longVal ? `<b class="up">LONG ${P.fmtSol(pv.longVal)} SOL</b>` : ""}${pv.shortVal ? `<b class="down">SHORT ${P.fmtSol(pv.shortVal)} SOL</b>` : ""}
       ${pv.order ? `<b style="font-size:13px;color:var(--brand2)">Order: ${pv.order}</b>` : ""}</div></div>` : "";
   const pending = pv?.pos.pending;
@@ -284,6 +278,33 @@ function openSheet(id) {
 }
 $("sheet").onclick = (e) => { if (e.target.id === "sheet") { openId = null; betDraft = null; $("sheet").classList.remove("open"); } };
 document.querySelectorAll("#seg button").forEach((b) => (b.onclick = () => { tab = b.dataset.tab; render(); }));
+document.querySelectorAll("[data-go]").forEach((a) => (a.onclick = () => { tab = a.dataset.go; render(); }));
+// faint hand-drawn lines drifting behind the hero (same feel as tajudeenxx.netlify.app)
+(function flow() {
+  const c = $("flow"); if (!c) return;
+  const g = c.getContext("2d"); let w, h, t = 0;
+  const still = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const size = () => { const r = c.getBoundingClientRect(); w = c.width = r.width * devicePixelRatio; h = c.height = r.height * devicePixelRatio; };
+  size(); addEventListener("resize", size);
+  const lines = Array.from({ length: 46 }, (_, i) => ({ y: Math.random(), a: 0.05 + Math.random() * 0.12, f: 0.6 + Math.random() * 1.4, p: Math.random() * 6.28, orange: i % 9 === 0 }));
+  function draw() {
+    g.clearRect(0, 0, w, h);
+    for (const l of lines) {
+      g.beginPath();
+      for (let x = -20; x <= w + 20; x += 18 * devicePixelRatio) {
+        const u = x / w;
+        const y = (l.y + 0.08 * Math.sin(u * 3.1 * l.f + l.p + t) + 0.04 * Math.sin(u * 7 + t * 1.3 + l.p)) * h;
+        x < 0 ? g.moveTo(x, y) : g.lineTo(x, y);
+      }
+      g.strokeStyle = l.orange ? `rgba(184,68,15,${l.a + 0.08})` : `rgba(17,17,17,${l.a * 0.6})`;
+      g.lineWidth = devicePixelRatio * (l.orange ? 1.2 : 0.8);
+      g.stroke();
+    }
+    t += 0.0035;
+    if (!still) requestAnimationFrame(draw);
+  }
+  draw();
+})();
 $("newDuel").onclick = () => { betDraft = null; openDuelSheet(); };
 $("newQ").onclick = () => openAsk();
 $("joinBtn").onclick = () => joinWithCode();
@@ -330,17 +351,17 @@ function duelCard(item, mine) {
   const me = wallet?.publicKey;
   const isCreator = me && d.creator.equals(me), isOpp = me && d.opponent.equals(me);
   let status = "";
-  if (d.state === 0) status = now >= d.deadline ? `<span class="tag" style="background:#2a2a2a">expired · refunding</span>` : `<span class="tag" style="background:#1c1309;color:var(--brand2)">open</span>`;
-  if (d.state === 1) status = now >= d.deadline ? `<span class="tag" style="background:#2a2a2a">settling…</span>` : `<span class="tag" style="background:#10291c;color:var(--up)">matched</span>`;
-  if (d.state === 2) { const won = me && d.winner.equals(me); status = `<span class="tag" style="background:${won ? "#10291c" : "#2a1416"};color:${won ? "var(--up)" : "var(--down)"}">${won ? "you won" : mine ? "you lost" : "settled"} · ${fmtV(x?.m.id, d.settledValue)}</span>`; }
-  if (d.state === 3) status = `<span class="tag" style="background:#2a2a2a">refunded</span>`;
+  if (d.state === 0) status = now >= d.deadline ? `<span class="tag" style="background:var(--soft)">expired · refunding</span>` : `<span class="tag" style="background:var(--tint);color:var(--brand2)">open</span>`;
+  if (d.state === 1) status = now >= d.deadline ? `<span class="tag" style="background:var(--soft)">settling…</span>` : `<span class="tag" style="background:var(--upTint);color:var(--up)">matched</span>`;
+  if (d.state === 2) { const won = me && d.winner.equals(me); status = `<span class="tag" style="background:${won ? "var(--upTint)" : "var(--downTint)"};color:${won ? "var(--up)" : "var(--down)"}">${won ? "you won" : mine ? "you lost" : "settled"} · ${fmtV(x?.m.id, d.settledValue)}</span>`; }
+  if (d.state === 3) status = `<span class="tag" style="background:var(--soft)">refunded</span>`;
   const btns = [];
   if (d.state === 0 && now < d.deadline - 600 && !isCreator && (!d.private || codes[pk.toBase58()])) btns.push(`<button class="btn sm" data-accept="${pk.toBase58()}">Take the other side · ${P.fmtSol(d.stake)} SOL</button>`);
   if (d.state === 0 && isCreator) btns.push(`<button class="btn ghost sm" data-cancel="${pk.toBase58()}">Cancel</button>`);
   if (d.state === 0 && isCreator) btns.push(`<button class="btn ghost sm" data-share="${pk.toBase58()}">Share challenge</button>`);
   btns.push(`<button class="btn ghost sm" data-chat="${pk.toBase58()}">${chatOpen === pk.toBase58() ? "Hide chat" : "Chat"}</button>`);
-  const priv = d.private ? `<span class="tag" style="background:#1d1630;color:#c8b6ff">private${isCreator && codes[pk.toBase58()] ? " · code " + pk.toBase58().slice(0, 6) + "-" + codes[pk.toBase58()] : ""}</span>` : "";
-  const side = isOpp ? `<span class="tag" style="background:#2a2a2a">you said ${d.above ? "BELOW" : "ABOVE"}</span>` : "";
+  const priv = d.private ? `<span class="tag" style="background:#F0ECFA;color:#5B46B0">private${isCreator && codes[pk.toBase58()] ? " · code " + pk.toBase58().slice(0, 6) + "-" + codes[pk.toBase58()] : ""}</span>` : "";
+  const side = isOpp ? `<span class="tag" style="background:var(--soft)">you said ${d.above ? "BELOW" : "ABOVE"}</span>` : "";
   return `<div class="duel" style="${focusDuel === pk.toBase58() ? "border-color:var(--brand)" : ""}">
     <div class="claim"><span class="muted">${isCreator ? "You" : state.house && d.creator.equals(state.house) ? "🏠 PULSE House" : short(d.creator)} say${isCreator ? "" : "s"}</span> <b>${name}</b> will be <b style="color:${d.above ? "var(--up)" : "var(--down)"}">${d.above ? "ABOVE" : "BELOW"} ${fmtV(x?.m.id, d.target)}</b> <span class="muted">${unit}</span> at <b>${when(d.deadline)}</b></div>
     <div class="meta"><span>stake ${P.fmtSol(d.stake)} SOL each</span><span>pot ${P.fmtSol(d.stake * 2n)} SOL</span>${x ? `<span>now ${fmtV(x.m.id, livePlayers(x))}</span>` : ""}</div>
@@ -542,6 +563,7 @@ function renderPredict() {
   if (focusQ) list.sort((a, b) => (a.pk.toBase58() === focusQ ? -1 : b.pk.toBase58() === focusQ ? 1 : 0));
   $("preds").innerHTML = list.length ? list.slice(0, 60).map(predCard).join("")
     : `<div class="empty">${pcat === "mine" ? (wallet ? "No bets yet. Pick a question and tap Yes or No." : "Connect your wallet to see your bets.") : "New questions open every few minutes. Pull to refresh, or ask your own."}</div>`;
+  if ($("heroQ").innerHTML) $("heroQ").querySelectorAll("[data-bet],[data-open]").forEach((b) => { if (b.dataset.bet) b.onclick = () => openBet(b.dataset.bet, b.dataset.yes === "1"); else b.onclick = () => openBet(b.dataset.open, true); });
   document.querySelectorAll("[data-bet]").forEach((b) => (b.onclick = () => openBet(b.dataset.bet, b.dataset.yes === "1")));
   document.querySelectorAll("[data-open]").forEach((b) => (b.onclick = () => openBet(b.dataset.open, true)));
 }
@@ -568,7 +590,7 @@ function renderBetSheet() {
     <div class="lbl">Amount</div>
     <div class="opt">${[0.05, 0.1, 0.25, 0.5, 1].map((v) => `<button data-am="${v}" class="${bd.amount === v ? "on" : ""}">${v} SOL</button>`).join("")}</div>
     <div class="towin"><span>To win</span><b>${P.fmtSol(win)} SOL</b><span class="muted">${lam ? `${(Number(win) / Number(lam)).toFixed(2)}x your SOL` : ""}</span></div>
-    ${!open ? `<div class="pstat">Betting is closed for this question.</div>` : wallet ? `<button class="btn" id="bBuy" style="width:100%;justify-content:center;padding:15px;${bd.yes ? "" : "background:linear-gradient(135deg,#ff5a5f,#c2303a);color:#fff"}">Buy ${bd.yes ? yesLabel(p) : noLabel(p)} · ${bd.amount} SOL</button>` : `<button class="btn" id="sConnect" style="width:100%;justify-content:center;padding:15px">Connect wallet to bet</button>`}
+    ${!open ? `<div class="pstat">Betting is closed for this question.</div>` : wallet ? `<button class="btn" id="bBuy" style="width:100%;justify-content:center;padding:15px;${bd.yes ? "" : "background:var(--down);border-color:var(--down);color:#fff"}">Buy ${bd.yes ? yesLabel(p) : noLabel(p)} · ${bd.amount} SOL</button>` : `<button class="btn" id="sConnect" style="width:100%;justify-content:center;padding:15px">Connect wallet to bet</button>`}
     <div class="row2" style="margin-top:10px"><button class="btn ghost sm" id="bShare">Share</button></div>
     <p class="hint">Winners split the whole pot in proportion to their stake (1% fee). Odds move as people bet; your payout is set by the final pools, so "To win" is today's estimate. Winnings are sent to your wallet automatically.</p>
     ${chatBox(betDraft.pk)}`;
