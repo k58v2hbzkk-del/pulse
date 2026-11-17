@@ -83,9 +83,51 @@ pub fn user_usd_for(shares: u128, sp: u64) -> u64 {
     (shares * sp as u128 / SCALE) as u64
 }
 
+/// 24h rolling average: mean of the finalized hourly averages from the last 23 hours
+/// plus the current (partial) hour. Covering a full day cancels out the daily cycle.
+pub fn rolling_average(hours: &[i64], avgs: &[u64], now_hour: i64, current_avg: u64) -> u64 {
+    let mut sum = current_avg as u128;
+    let mut n = 1u128;
+    for (h, a) in hours.iter().zip(avgs) {
+        if *a > 0 && *h < now_hour && now_hour - *h < 24 {
+            sum += *a as u128;
+            n += 1;
+        }
+    }
+    (sum / n) as u64
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn rolling_average_cancels_daily_cycle() {
+        // a game that swings 100k..300k every day (pure cycle, no trend)
+        let mut hours = [0i64; 24];
+        let mut avgs = [0u64; 24];
+        let day = |h: i64| (200_000.0 + 100_000.0 * ((h as f64) * std::f64::consts::PI / 12.0).sin()) as u64;
+        let start = 500_000i64;
+        let mut seen = vec![];
+        for h in start..start + 72 {
+            let i = (h.rem_euclid(24)) as usize;
+            let idx = rolling_average(&hours, &avgs, h, day(h));
+            if h >= start + 24 { seen.push(idx); }
+            hours[i] = h;
+            avgs[i] = day(h);
+        }
+        let (mn, mx) = (*seen.iter().min().unwrap(), *seen.iter().max().unwrap());
+        // raw swings +-50%; the index stays within ~1% of 200k
+        assert!(mn > 197_000 && mx < 203_000, "{mn}..{mx}");
+    }
+
+    #[test]
+    fn rolling_average_follows_real_trend() {
+        let hours = [0i64; 24];
+        let avgs = [0u64; 24];
+        // no history yet: index = current reading
+        assert_eq!(rolling_average(&hours, &avgs, 10, 5_000), 5_000);
+    }
 
     const USD: u64 = 1_000_000;
 

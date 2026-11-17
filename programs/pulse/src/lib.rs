@@ -12,6 +12,7 @@
 
 use anchor_lang::prelude::*;
 use anchor_spl::token::{self, Mint, MintTo, Token, TokenAccount};
+use switchboard_on_demand::{SwitchboardQuote, DEFAULT_DEVNET_QUEUE, QUOTE_PROGRAM_ID};
 
 pub mod math;
 use math::*;
@@ -22,6 +23,11 @@ pub const HISTORY_LEN: usize = 240;
 pub const MAX_FAUCET: u64 = 1_000_000_000; // 1,000 test dollars per call
 pub const MIN_DEPOSIT: u64 = 10_000_000; // 0.01 SOL (lamports)
 pub const SIDE_LONG: u8 = 0;
+pub const INDEX_HOURS: usize = 24;
+/// Oracle quotes older than this many slots (~2 min) are rejected.
+pub const MAX_QUOTE_AGE_SLOTS: u64 = 300;
+/// Switchboard feed values are fixed-point with 18 decimals.
+pub const SB_PRECISION: i128 = 1_000_000_000_000_000_000;
 pub const SIDE_SHORT: u8 = 1;
 
 #[program]
@@ -100,64 +106,45 @@ pub mod pulse {
         Ok(())
     }
 
-    /// Keeper posts the latest index. Moves value between pools, then fills the orders
-    /// that were queued during the PREVIOUS epoch.
-    pub fn push_price(ctx: Context<PushPrice>, price: u64) -> Result<()> {
-        require!(price > 0, PulseError::BadParam);
-        let now = Clock::get()?.unix_timestamp;
-        let m = &mut ctx.accounts.market;
-        require!(m.active, PulseError::Inactive);
-
-        // 1. value flows from losing pool to winning pool
-        let (lb, sb) = rebalance(
-            m.long_balance,
-            m.short_balance,
-            m.long_shares > 0,
-            m.short_shares > 0,
-            m.price,
-            price,
-            m.leverage,
-        );
-        m.long_balance = lb;
-        m.short_balance = sb;
-
-        // 2. fill orders queued in epoch-1 (bucket (e+1)%2)
-        let e = m.epoch;
-        let b = ((e + 1) % 2) as usize;
-        let lsp = share_price(m.long_balance, m.long_shares);
-        let ssp = share_price(m.short_balance, m.short_shares);
-        let (nb, ns, lout) = execute(m.long_balance, m.long_shares, m.pend_long_wd[b], m.pend_long_dep[b], lsp);
-        m.long_balance = nb;
-        m.long_shares = ns;
-        let (nb, ns, sout) = execute(m.short_balance, m.short_shares, m.pend_short_wd[b], m.pend_short_dep[b], ssp);
-        m.short_balance = nb;
-        m.short_shares = ns;
-        m.reserved_payouts = m.reserved_payouts.checked_add(lout + sout).ok_or(PulseError::Math)?;
-        m.pend_long_wd[b] = 0;
-        m.pend_long_dep[b] = 0;
-        m.pend_short_wd[b] = 0;
-        m.pend_short_dep[b] = 0;
-
-        // 3. record this epoch (price + fill prices) in the ring buffer
-        let mut h = ctx.accounts.history.load_mut()?;
-        let i = (e as usize) % HISTORY_LEN;
-        h.epochs[i] = e + 1; // stored +1 so 0 means "empty"
-        h.prices[i] = price;
-        h.long_sp[i] = lsp;
-        h.short_sp[i] = ssp;
-        h.times[i] = now;
-
-        m.price = price;
-        m.epoch = e + 1;
-        m.last_update = now;
-        emit!(PricePushed {
-            market: m.key(),
-            epoch: e,
-            price,
-            long_balance: m.long_balance,
-            short_balance: m.short_balance,
-        });
+    /// Attach a 24h attention index to a market. `feed_id` = Switchboard feed hash
+    /// (all zeros = keeper-posted data while an oracle feed is being set up).
+    pub fn init_index(ctx: Context<InitIndex>, feed_id: [u8; 32]) -> Result<()> {
+        let mut ix = ctx.accounts.index.load_init()?;
+        ix.market = ctx.accounts.market.key();
+        ix.feed_id = feed_id;
         Ok(())
+    }
+
+    pub fn set_feed(ctx: Context<SetFeed>, feed_id: [u8; 32]) -> Result<()> {
+        ctx.accounts.index.load_mut()?.feed_id = feed_id;
+        Ok(())
+    }
+
+    /// Post the latest attention reading and move the pools.
+    ///
+    /// * Oracle mode (index has a feed): the reading comes from a Switchboard quote that
+    ///   oracles signed and the Switchboard quote program verified. ANYONE can crank it,
+    ///   nobody (including the admin) can choose the number.
+    /// * Keeper mode (no feed yet): only the configured keeper can post `price`.
+    ///
+    /// The traded price is the 24-hour rolling average of readings, computed here on-chain,
+    /// so predictable daily peaks and dips cancel out and only real trends move the market.
+    pub fn push_price(ctx: Context<PushPrice>, price: u64) -> Result<()> {
+        let clock = Clock::get()?;
+        let now = clock.unix_timestamp;
+        let mut ix = ctx.accounts.index.load_mut()?;
+        require_keys_eq!(ix.market, ctx.accounts.market.key(), PulseError::BadParam);
+
+        let raw = if ix.feed_id != [0u8; 32] {
+            read_oracle(&ctx.accounts.quote, &ix.feed_id, clock.slot)?
+        } else {
+            require_keys_eq!(ctx.accounts.cranker.key(), ctx.accounts.config.keeper, PulseError::NotKeeper);
+            price
+        };
+        require!(raw > 0, PulseError::BadParam);
+        let index_price = ix.record(raw, now);
+        drop(ix);
+        apply_price(&mut ctx.accounts.market, &ctx.accounts.history, index_price, now)
     }
 
     pub fn open_position(ctx: Context<OpenPosition>) -> Result<()> {
@@ -270,6 +257,63 @@ pub mod pulse {
     }
 }
 
+// ---------------------------------------------------------------- price logic
+
+/// Read a verified Switchboard reading for `feed_id`.
+fn read_oracle(quote: &UncheckedAccount, feed_id: &[u8; 32], slot: u64) -> Result<u64> {
+    // must be the canonical quote account for this feed on the official devnet queue,
+    // owned (and therefore written only) by the Switchboard quote program
+    require_keys_eq!(*quote.owner, QUOTE_PROGRAM_ID, PulseError::BadOracle);
+    let (expected, _) = Pubkey::find_program_address(&[DEFAULT_DEVNET_QUEUE.as_ref(), feed_id.as_ref()], &QUOTE_PROGRAM_ID);
+    require_keys_eq!(quote.key(), expected, PulseError::BadOracle);
+    let data = quote.try_borrow_data()?;
+    let q = <SwitchboardQuote as AccountDeserialize>::try_deserialize(&mut &data[..])?;
+    require_keys_eq!(q.queue, DEFAULT_DEVNET_QUEUE, PulseError::BadOracle);
+    require!(slot.saturating_sub(q.slot) <= MAX_QUOTE_AGE_SLOTS, PulseError::StaleOracle);
+    let feed = q.feeds_slice().iter().find(|f| f.feed_id() == feed_id).ok_or(PulseError::BadOracle)?;
+    let v = feed.feed_value();
+    require!(v > 0, PulseError::BadOracle);
+    Ok((v / SB_PRECISION) as u64)
+}
+
+/// Move value between pools at `price`, fill queued orders, record history.
+fn apply_price<'info>(m: &mut Account<'info, Market>, history: &AccountLoader<'info, History>, price: u64, now: i64) -> Result<()> {
+    require!(m.active, PulseError::Inactive);
+    let (lb, sb) = rebalance(m.long_balance, m.short_balance, m.long_shares > 0, m.short_shares > 0, m.price, price, m.leverage);
+    m.long_balance = lb;
+    m.short_balance = sb;
+
+    let e = m.epoch;
+    let b = ((e + 1) % 2) as usize;
+    let lsp = share_price(m.long_balance, m.long_shares);
+    let ssp = share_price(m.short_balance, m.short_shares);
+    let (nb, ns, lout) = execute(m.long_balance, m.long_shares, m.pend_long_wd[b], m.pend_long_dep[b], lsp);
+    m.long_balance = nb;
+    m.long_shares = ns;
+    let (nb, ns, sout) = execute(m.short_balance, m.short_shares, m.pend_short_wd[b], m.pend_short_dep[b], ssp);
+    m.short_balance = nb;
+    m.short_shares = ns;
+    m.reserved_payouts = m.reserved_payouts.checked_add(lout + sout).ok_or(PulseError::Math)?;
+    m.pend_long_wd[b] = 0;
+    m.pend_long_dep[b] = 0;
+    m.pend_short_wd[b] = 0;
+    m.pend_short_dep[b] = 0;
+
+    let mut h = history.load_mut()?;
+    let i = (e as usize) % HISTORY_LEN;
+    h.epochs[i] = e + 1;
+    h.prices[i] = price;
+    h.long_sp[i] = lsp;
+    h.short_sp[i] = ssp;
+    h.times[i] = now;
+
+    m.price = price;
+    m.epoch = e + 1;
+    m.last_update = now;
+    emit!(PricePushed { market: m.key(), epoch: e, price, long_balance: m.long_balance, short_balance: m.short_balance });
+    Ok(())
+}
+
 // ---------------------------------------------------------------- accounts
 
 #[account]
@@ -318,6 +362,43 @@ pub struct History {
     pub long_sp: [u64; HISTORY_LEN],
     pub short_sp: [u64; HISTORY_LEN],
     pub times: [i64; HISTORY_LEN],
+}
+
+/// 24-hour rolling attention index, one per market.
+#[account(zero_copy)]
+#[repr(C)]
+pub struct Index {
+    pub market: Pubkey,
+    pub feed_id: [u8; 32],
+    pub last_raw: u64,
+    pub last_time: i64,
+    pub cur_hour: i64,
+    pub cur_sum: u64,
+    pub cur_n: u64,
+    pub hours: [i64; INDEX_HOURS],
+    pub avgs: [u64; INDEX_HOURS],
+}
+
+impl Index {
+    /// Add a reading; returns the 24h rolling average (the traded price).
+    pub fn record(&mut self, raw: u64, now: i64) -> u64 {
+        let hour = now / 3600;
+        if hour != self.cur_hour {
+            if self.cur_n > 0 {
+                let slot = (self.cur_hour.rem_euclid(INDEX_HOURS as i64)) as usize;
+                self.hours[slot] = self.cur_hour;
+                self.avgs[slot] = self.cur_sum / self.cur_n;
+            }
+            self.cur_hour = hour;
+            self.cur_sum = 0;
+            self.cur_n = 0;
+        }
+        self.cur_sum = self.cur_sum.saturating_add(raw);
+        self.cur_n += 1;
+        self.last_raw = raw;
+        self.last_time = now;
+        rolling_average(&self.hours, &self.avgs, hour, self.cur_sum / self.cur_n)
+    }
 }
 
 #[account]
@@ -400,13 +481,40 @@ pub struct AdminMarket<'info> {
 
 #[derive(Accounts)]
 pub struct PushPrice<'info> {
-    pub keeper: Signer<'info>,
-    #[account(seeds = [b"config"], bump = config.bump, has_one = keeper)]
+    /// Anyone in oracle mode; the keeper in keeper mode.
+    pub cranker: Signer<'info>,
+    #[account(seeds = [b"config"], bump = config.bump)]
     pub config: Account<'info, Config>,
     #[account(mut, has_one = history)]
     pub market: Account<'info, Market>,
     #[account(mut)]
     pub history: AccountLoader<'info, History>,
+    #[account(mut, seeds = [b"index", market.key().as_ref()], bump)]
+    pub index: AccountLoader<'info, Index>,
+    /// CHECK: Switchboard quote account, fully validated in `read_oracle` (any account in keeper mode)
+    pub quote: UncheckedAccount<'info>,
+}
+
+#[derive(Accounts)]
+pub struct InitIndex<'info> {
+    #[account(mut)]
+    pub admin: Signer<'info>,
+    #[account(seeds = [b"config"], bump = config.bump, has_one = admin)]
+    pub config: Account<'info, Config>,
+    pub market: Account<'info, Market>,
+    #[account(init, payer = admin, space = 8 + std::mem::size_of::<Index>(), seeds = [b"index", market.key().as_ref()], bump)]
+    pub index: AccountLoader<'info, Index>,
+    pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
+pub struct SetFeed<'info> {
+    pub admin: Signer<'info>,
+    #[account(seeds = [b"config"], bump = config.bump, has_one = admin)]
+    pub config: Account<'info, Config>,
+    pub market: Account<'info, Market>,
+    #[account(mut, seeds = [b"index", market.key().as_ref()], bump)]
+    pub index: AccountLoader<'info, Index>,
 }
 
 #[derive(Accounts)]
@@ -496,6 +604,12 @@ pub enum PulseError {
     Expired,
     #[msg("Math overflow")]
     Math,
+    #[msg("Only the keeper can post data for this market")]
+    NotKeeper,
+    #[msg("Oracle quote is not the verified Switchboard feed for this market")]
+    BadOracle,
+    #[msg("Oracle quote is too old")]
+    StaleOracle,
 }
 
 #[cfg(test)]
