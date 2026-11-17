@@ -24,6 +24,9 @@ jobs:
       - name: Write keys
         env:
           ADMIN_KEY: ${{ secrets.ADMIN_KEY }}
+          TWITCH_CLIENT_ID: ${{ secrets.TWITCH_CLIENT_ID }}
+          TWITCH_CLIENT_SECRET: ${{ secrets.TWITCH_CLIENT_SECRET }}
+          GITHUB_TOKEN: ${{ github.token }}
           PROGRAM_KEY: ${{ secrets.PROGRAM_KEY }}
         run: |
           node keeper/keyfile.js admin.json

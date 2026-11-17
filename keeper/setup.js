@@ -1,5 +1,6 @@
 // One-time (safe to re-run): creates the config, test-dollar mint and the launch markets.
-import { conn, loadKey, send, solBalance, tryAirdrop, steamPlayers } from "./common.js";
+import { conn, loadKey, send, solBalance, tryAirdrop } from "./common.js";
+import { readSource } from "./sources.js";
 import {
   configPda, marketPda, indexPda, quotePda, initConfigIx, createMarketIx, initIndexIx, setFeedIx, pushPriceIx, PROGRAM_ID,
 } from "../app/sdk.js";
@@ -19,20 +20,22 @@ if (!(await conn.getAccountInfo(configPda()))) {
 
 for (const m of MARKETS) {
   if (await conn.getAccountInfo(marketPda(m.id))) { console.log(`market ${m.id} exists`); continue; }
-  const initialPrice = await steamPlayers(m.sourceId);
+  let initialPrice;
+  try { initialPrice = await readSource(m); } catch (e) { console.log(`skip market ${m.id} ${m.name}: ${e.message}`); continue; }
   const sig = await send(admin, createMarketIx(admin.publicKey, { ...m, initialPrice }));
-  console.log(`created market ${m.id} ${m.name} @ ${initialPrice} players:`, sig);
+  console.log(`created market ${m.id} ${m.name} @ ${initialPrice}:`, sig);
 }
 // 24h index accounts (start in keeper mode)
 for (const m of MARKETS) {
   const mk = marketPda(m.id);
+  if (!(await conn.getAccountInfo(mk))) continue;
   if (await conn.getAccountInfo(indexPda(mk))) { console.log(`index ${m.id} exists`); continue; }
   console.log(`index ${m.id}:`, await send(admin, initIndexIx(admin.publicKey, mk)));
 }
 
 // Switch each market to the Switchboard oracle, but only after a real signed update works.
 if (process.env.ENABLE_ORACLE === "1") {
-  for (const m of MARKETS) {
+  for (const m of MARKETS.filter((x) => x.kind === "steam")) {
     const mk = marketPda(m.id);
     const feedId = feedIdOf(m);
     try {

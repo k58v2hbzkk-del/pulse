@@ -24,6 +24,10 @@ const IX = {
   settle: [175, 42, 185, 87, 144, 131, 102, 212],
   init_index: [206, 236, 58, 58, 171, 221, 237, 57],
   set_feed: [79, 150, 2, 207, 41, 104, 77, 41],
+  create_duel: [49, 28, 93, 11, 75, 242, 69, 165],
+  accept_duel: [80, 52, 90, 135, 172, 221, 175, 102],
+  cancel_duel: [83, 124, 224, 237, 235, 44, 38, 57],
+  settle_duel: [148, 90, 251, 130, 217, 144, 190, 239],
 };
 export const ACCT = {
   Config: [155, 12, 170, 224, 30, 250, 204, 130],
@@ -31,6 +35,7 @@ export const ACCT = {
   History: [31, 216, 60, 33, 213, 209, 70, 101],
   Position: [170, 188, 143, 228, 122, 64, 247, 208],
   Index: [140, 66, 194, 132, 78, 26, 135, 186],
+  Duel: [126, 229, 210, 60, 177, 135, 124, 224],
 };
 export const QUOTE_PROGRAM = new PublicKey("orac1eFjzWL5R3RbbdMV68K9H6TaCVVcL6LjvQQWAbz");
 export const SB_DEVNET_QUEUE = new PublicKey("EYiAmGSdsQTuCw413V5BzaruWuCCSDgTPtBGvLkXHbe7");
@@ -63,6 +68,8 @@ export const mintPda = () => pda([Buffer.from("mint")]);
 export const marketPda = (id) => pda([Buffer.from("market"), u32(id)]);
 export const historyPda = (market) => pda([Buffer.from("history"), market.toBuffer()]);
 export const vaultPda = (market) => pda([Buffer.from("vault"), market.toBuffer()]);
+export const duelPda = (market, creator, nonce) =>
+  pda([Buffer.from("duel"), market.toBuffer(), creator.toBuffer(), u64(nonce)]);
 export const indexPda = (market) => pda([Buffer.from("index"), market.toBuffer()]);
 export const positionPda = (market, owner) => pda([Buffer.from("position"), market.toBuffer(), owner.toBuffer()]);
 export const ataOf = (owner, mint = mintPda()) =>
@@ -123,6 +130,31 @@ export const withdrawIx = (owner, market, side, shares) =>
 
 export const settleIx = (market, owner) =>
   ix([r(configPda()), w(market), r(historyPda(market)), w(positionPda(market, owner)), w(owner)], data("settle"));
+
+// ------------------------------------------------------------ DUEL mode
+const i64 = (v) => { const b = Buffer.alloc(8); b.writeBigInt64LE(BigInt(v)); return b; };
+/** "reading will be ABOVE/BELOW target at deadline (unix s)", stake in lamports */
+export function createDuelIx(creator, market, { nonce, above, target, deadline, stake }) {
+  return ix([w(creator, true), r(market), w(duelPda(market, creator, nonce)), r(SystemProgram.programId)],
+    data("create_duel", u64(nonce), u8(above ? 1 : 0), u64(target), i64(deadline), u64(stake)));
+}
+export const acceptDuelIx = (opponent, duel) =>
+  ix([w(opponent, true), w(duel), r(SystemProgram.programId)], data("accept_duel"));
+export const cancelDuelIx = (creator, duel) => ix([w(creator, true), w(duel)], data("cancel_duel"));
+/** permissionless; for an unaccepted duel pass the creator as opponent */
+export const settleDuelIx = (duel, market, creator, opponent) =>
+  ix([w(duel), w(market), r(indexPda(market)), w(creator), w(opponent)], data("settle_duel"));
+
+export const DUEL_STATE = ["open", "matched", "settled", "refunded"];
+export function decodeDuel(buf) {
+  const dv = view(buf);
+  return {
+    market: key(buf, 8), creator: key(buf, 40), opponent: key(buf, 72), winner: key(buf, 104),
+    nonce: rd64(dv, 136), stake: rd64(dv, 144), target: rd64(dv, 152), settledValue: rd64(dv, 160),
+    deadline: Number(dv.getBigInt64(168, true)), created: Number(dv.getBigInt64(176, true)),
+    above: buf[184] === 1, state: buf[185],
+  };
+}
 
 // ------------------------------------------------------------ decoding
 const view = (buf) => new DataView(buf.buffer, buf.byteOffset, buf.byteLength);

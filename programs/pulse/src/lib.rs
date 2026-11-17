@@ -32,6 +32,17 @@ pub const SB_PRECISION: i128 = 1_000_000_000_000_000_000;
 /// Combined with the 24h average, a dishonest data source can only move the price
 /// slowly and in public, so traders can always exit first.
 pub const MAX_STEP_BPS: u64 = 1_500;
+/// DUEL fee taken from the winner's pot (bps), kept in the market for the protocol.
+pub const DUEL_FEE_BPS: u64 = 100;
+pub const DUEL_MIN_STAKE: u64 = 10_000_000; // 0.01 SOL
+/// A duel settles from the first reading posted after its deadline, within this window.
+pub const DUEL_SETTLE_WINDOW: i64 = 3_600;
+/// If a matched duel can't be settled (no data) this long after its deadline, both get refunds.
+pub const DUEL_REFUND_AFTER: i64 = 3 * 86_400;
+pub const DUEL_OPEN: u8 = 0;
+pub const DUEL_MATCHED: u8 = 1;
+pub const DUEL_SETTLED: u8 = 2;
+pub const DUEL_REFUNDED: u8 = 3;
 pub const SIDE_SHORT: u8 = 1;
 
 #[program]
@@ -248,6 +259,112 @@ pub mod pulse {
             m.reserved_payouts -= pay;
             m.sub_lamports(pay)?;
             ctx.accounts.owner.add_lamports(pay)?;
+        }
+        Ok(())
+    }
+
+    // ------------------------------------------------------------ DUEL mode
+    /// Challenge anyone: "the reading will be ABOVE/BELOW `target` at `deadline`".
+    /// Your stake is locked in the duel account until someone accepts or you cancel.
+    pub fn create_duel(ctx: Context<CreateDuel>, nonce: u64, above: bool, target: u64, deadline: i64, stake: u64) -> Result<()> {
+        let now = Clock::get()?.unix_timestamp;
+        require!(stake >= DUEL_MIN_STAKE, PulseError::TooSmall);
+        require!(target > 0, PulseError::BadParam);
+        require!(deadline >= now + 600 && deadline <= now + 30 * 86_400, PulseError::BadDeadline);
+        require!(ctx.accounts.market.active, PulseError::Inactive);
+        let d = &mut ctx.accounts.duel;
+        d.market = ctx.accounts.market.key();
+        d.creator = ctx.accounts.creator.key();
+        d.nonce = nonce;
+        d.stake = stake;
+        d.target = target;
+        d.deadline = deadline;
+        d.created = now;
+        d.above = above;
+        d.state = DUEL_OPEN;
+        d.bump = ctx.bumps.duel;
+        anchor_lang::system_program::transfer(
+            CpiContext::new(ctx.accounts.system_program.to_account_info(),
+                anchor_lang::system_program::Transfer { from: ctx.accounts.creator.to_account_info(), to: d.to_account_info() }),
+            stake,
+        )
+    }
+
+    /// Take the other side by matching the stake. Closes 10 minutes before the deadline.
+    pub fn accept_duel(ctx: Context<AcceptDuel>) -> Result<()> {
+        let now = Clock::get()?.unix_timestamp;
+        let d = &mut ctx.accounts.duel;
+        require!(d.state == DUEL_OPEN, PulseError::DuelNotOpen);
+        require!(now <= d.deadline - 600, PulseError::BadDeadline);
+        require_keys_neq!(ctx.accounts.opponent.key(), d.creator, PulseError::BadParam);
+        d.opponent = ctx.accounts.opponent.key();
+        d.state = DUEL_MATCHED;
+        let stake = d.stake;
+        anchor_lang::system_program::transfer(
+            CpiContext::new(ctx.accounts.system_program.to_account_info(),
+                anchor_lang::system_program::Transfer { from: ctx.accounts.opponent.to_account_info(), to: d.to_account_info() }),
+            stake,
+        )
+    }
+
+    /// Creator takes back an unaccepted challenge.
+    pub fn cancel_duel(ctx: Context<CancelDuel>) -> Result<()> {
+        let d = &mut ctx.accounts.duel;
+        require!(d.state == DUEL_OPEN, PulseError::DuelNotOpen);
+        d.state = DUEL_REFUNDED;
+        let stake = d.stake;
+        d.sub_lamports(stake)?;
+        ctx.accounts.creator.add_lamports(stake)?;
+        Ok(())
+    }
+
+    /// Permissionless: after the deadline, pays the winner from the first audited reading
+    /// posted after the deadline. Unaccepted duels refund the creator; ties and stuck duels refund both.
+    pub fn settle_duel(ctx: Context<SettleDuel>) -> Result<()> {
+        let now = Clock::get()?.unix_timestamp;
+        let d = &mut ctx.accounts.duel;
+        require!(now >= d.deadline, PulseError::TooEarly);
+        require!(d.state == DUEL_OPEN || d.state == DUEL_MATCHED, PulseError::DuelNotOpen);
+        require_keys_eq!(ctx.accounts.creator.key(), d.creator, PulseError::BadParam);
+        let stake = d.stake;
+        if d.state == DUEL_OPEN {
+            d.state = DUEL_REFUNDED;
+            d.sub_lamports(stake)?;
+            ctx.accounts.creator.add_lamports(stake)?;
+            return Ok(());
+        }
+        require_keys_eq!(ctx.accounts.opponent.key(), d.opponent, PulseError::BadParam);
+        let ix = ctx.accounts.index.load()?;
+        let fresh = ix.last_time >= d.deadline && ix.last_time <= d.deadline + DUEL_SETTLE_WINDOW;
+        if !fresh {
+            // no usable reading: wait, unless it's been stuck too long → refund both
+            require!(now > d.deadline + DUEL_REFUND_AFTER, PulseError::NotFilledYet);
+            drop(ix);
+            d.state = DUEL_REFUNDED;
+            d.sub_lamports(stake * 2)?;
+            ctx.accounts.creator.add_lamports(stake)?;
+            ctx.accounts.opponent.add_lamports(stake)?;
+            return Ok(());
+        }
+        let value = ix.last_raw;
+        drop(ix);
+        d.settled_value = value;
+        d.state = DUEL_SETTLED;
+        match duel_outcome(d.above, d.target, value) {
+            DuelResult::Tie => {
+                d.sub_lamports(stake * 2)?;
+                ctx.accounts.creator.add_lamports(stake)?;
+                ctx.accounts.opponent.add_lamports(stake)?;
+            }
+            r => {
+                let pot = stake * 2;
+                let fee = pot * DUEL_FEE_BPS / 10_000;
+                d.winner = if r == DuelResult::Creator { d.creator } else { d.opponent };
+                d.sub_lamports(pot)?;
+                ctx.accounts.market.add_lamports(fee)?;
+                ctx.accounts.market.fees += fee;
+                if r == DuelResult::Creator { ctx.accounts.creator.add_lamports(pot - fee)?; } else { ctx.accounts.opponent.add_lamports(pot - fee)?; }
+            }
         }
         Ok(())
     }
@@ -580,6 +697,71 @@ pub struct CollectFees<'info> {
 
 // ---------------------------------------------------------------- events / errors
 
+// ---------------------------------------------------------------- DUEL accounts
+
+#[account]
+#[derive(InitSpace)]
+pub struct Duel {
+    pub market: Pubkey,
+    pub creator: Pubkey,
+    pub opponent: Pubkey,
+    pub winner: Pubkey,
+    pub nonce: u64,
+    pub stake: u64,
+    pub target: u64,
+    pub settled_value: u64,
+    pub deadline: i64,
+    pub created: i64,
+    pub above: bool,
+    pub state: u8,
+    pub bump: u8,
+}
+
+#[derive(Accounts)]
+#[instruction(nonce: u64)]
+pub struct CreateDuel<'info> {
+    #[account(mut)]
+    pub creator: Signer<'info>,
+    pub market: Account<'info, Market>,
+    #[account(init, payer = creator, space = 8 + Duel::INIT_SPACE,
+        seeds = [b"duel", market.key().as_ref(), creator.key().as_ref(), nonce.to_le_bytes().as_ref()], bump)]
+    pub duel: Account<'info, Duel>,
+    pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
+pub struct AcceptDuel<'info> {
+    #[account(mut)]
+    pub opponent: Signer<'info>,
+    #[account(mut)]
+    pub duel: Account<'info, Duel>,
+    pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
+pub struct CancelDuel<'info> {
+    #[account(mut)]
+    pub creator: Signer<'info>,
+    #[account(mut, has_one = creator)]
+    pub duel: Account<'info, Duel>,
+}
+
+#[derive(Accounts)]
+pub struct SettleDuel<'info> {
+    #[account(mut, has_one = market)]
+    pub duel: Account<'info, Duel>,
+    #[account(mut)]
+    pub market: Account<'info, Market>,
+    #[account(seeds = [b"index", market.key().as_ref()], bump)]
+    pub index: AccountLoader<'info, Index>,
+    /// CHECK: must equal duel.creator (checked in the handler)
+    #[account(mut)]
+    pub creator: UncheckedAccount<'info>,
+    /// CHECK: must equal duel.opponent when matched (checked in the handler); any account otherwise
+    #[account(mut)]
+    pub opponent: UncheckedAccount<'info>,
+}
+
 #[event]
 pub struct PricePushed {
     pub market: Pubkey,
@@ -615,6 +797,12 @@ pub enum PulseError {
     BadOracle,
     #[msg("Oracle quote is too old")]
     StaleOracle,
+    #[msg("Deadline must be 10 minutes to 30 days away, and duels close 10 minutes before it")]
+    BadDeadline,
+    #[msg("This duel is not open")]
+    DuelNotOpen,
+    #[msg("Too early")]
+    TooEarly,
 }
 
 #[cfg(test)]
@@ -654,5 +842,20 @@ mod layout_dump {
             hex(&mb), hex(&pb), hex(&cm), hex(&wd), hex(&ic), 8 + std::mem::size_of::<History>()
         );
         std::fs::write("/tmp/pulse_layout.json", out).unwrap();
+    }
+}
+
+#[cfg(test)]
+mod duel_layout_dump {
+    use super::*;
+    use anchor_lang::{AccountSerialize, InstructionData};
+    #[test]
+    fn dump_duel() {
+        let k = |n: u8| Pubkey::new_from_array([n; 32]);
+        let d = Duel { market: k(1), creator: k(2), opponent: k(3), winner: k(4), nonce: 5, stake: 6, target: 7, settled_value: 8, deadline: -9, created: 10, above: true, state: 2, bump: 254 };
+        let mut b = vec![]; d.try_serialize(&mut b).unwrap();
+        let cd = instruction::CreateDuel { nonce: 77, above: true, target: 600_000, deadline: 1_800_000_000, stake: 10_000_000 }.data();
+        let hex = |v: &[u8]| v.iter().map(|x| format!("{x:02x}")).collect::<String>();
+        std::fs::write("/tmp/duel_layout.json", format!(r#"{{"duel":"{}","create":"{}"}}"#, hex(&b), hex(&cd))).unwrap();
     }
 }

@@ -107,9 +107,27 @@ pub fn clamp_step(last: u64, raw: u64, max_bps: u64) -> u64 {
     raw.clamp(lo.max(1), hi)
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DuelResult { Creator, Opponent, Tie }
+
+/// Creator called ABOVE (`above = true`) or BELOW `target`; `value` is the settling reading.
+pub fn duel_outcome(above: bool, target: u64, value: u64) -> DuelResult {
+    if value == target { return DuelResult::Tie; }
+    if (value > target) == above { DuelResult::Creator } else { DuelResult::Opponent }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn duel_outcomes() {
+        assert_eq!(duel_outcome(true, 600_000, 612_000), DuelResult::Creator);
+        assert_eq!(duel_outcome(true, 600_000, 590_000), DuelResult::Opponent);
+        assert_eq!(duel_outcome(false, 600_000, 590_000), DuelResult::Creator);
+        assert_eq!(duel_outcome(false, 600_000, 612_000), DuelResult::Opponent);
+        assert_eq!(duel_outcome(true, 600_000, 600_000), DuelResult::Tie);
+    }
 
     #[test]
     fn clamp_step_limits_jumps() {

@@ -17,4 +17,7 @@ jobs:
       - name: Compare on-chain data with Steam
         env:
           RPC_URL: ${{ secrets.RPC_URL || 'https://api.devnet.solana.com' }}
+          TWITCH_CLIENT_ID: ${{ secrets.TWITCH_CLIENT_ID }}
+          TWITCH_CLIENT_SECRET: ${{ secrets.TWITCH_CLIENT_SECRET }}
+          GITHUB_TOKEN: ${{ github.token }}
         run: node keeper/audit.js

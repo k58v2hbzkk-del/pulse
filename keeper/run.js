@@ -1,10 +1,11 @@
 // The keeper: posts live attention data on-chain every INTERVAL seconds and auto-settles
 // filled orders for users. Runs inside GitHub Actions for free (restarts every ~6h).
-import { conn, loadKey, send, solBalance, tryAirdrop, steamPlayers, sleep } from "./common.js";
+import { conn, loadKey, send, solBalance, tryAirdrop, sleep } from "./common.js";
+import { readSource } from "./sources.js";
 import { sendWithUpdate, feedIdOf } from "./oracle.js";
 import {
   PROGRAM_ID, marketPda, positionPda, indexPda, quotePda, decodeIndex, pushPriceIx, setFeedIx, settleIx, openPositionIx, depositIx,
-  decodeMarket, decodePosition, sharePrice, valueOf, ACCT,
+  decodeMarket, decodePosition, sharePrice, valueOf, ACCT, decodeDuel, settleDuelIx,
 } from "../app/sdk.js";
 import { MARKETS } from "./markets.js";
 import bs58 from "bs58";
@@ -28,9 +29,10 @@ async function pushAll() {
         const sig = await sendWithUpdate(keeper, m, pushPriceIx(keeper.publicKey, mk, 0, quotePda(feedId)));
         console.log(`  ${m.name}: oracle update`, sig);
       } else {
-        const players = await steamPlayers(m.sourceId);
-        keeperIxs.push(pushPriceIx(keeper.publicKey, mk, players));
-        console.log(`  ${m.name}: ${players}`);
+        if (!(await conn.getAccountInfo(mk))) continue; // market not created (e.g. Twitch keys missing)
+        const reading = await readSource(m);
+        keeperIxs.push(pushPriceIx(keeper.publicKey, mk, reading));
+        console.log(`  ${m.name}: ${reading}`);
       }
     } catch (e) {
       console.log(`  ${m.name}: skipped (${e.message?.slice(0, 200)})`);
@@ -42,7 +44,11 @@ async function pushAll() {
       }
     }
   }
-  if (keeperIxs.length) console.log("  pushed:", await send(keeper, ...keeperIxs));
+  // a transaction fits ~6 pushes; send in chunks
+  for (let i = 0; i < keeperIxs.length; i += 6) {
+    try { console.log("  pushed:", await send(keeper, ...keeperIxs.slice(i, i + 6))); }
+    catch (e) { console.log("  push failed:", e.message?.slice(0, 200)); }
+  }
 }
 
 async function settleFilled() {
@@ -64,6 +70,26 @@ async function settleFilled() {
     const batch = ready.slice(i, i + 4).map((p) => settleIx(p.market, p.owner));
     try { console.log(`  settled ${batch.length}:`, await send(keeper, ...batch)); }
     catch (e) { console.log("  settle failed:", e.message); }
+  }
+}
+
+// ------------------------------------------------------------ DUEL auto-settle
+// Settles every duel past its deadline (permissionless): pays winners, refunds unaccepted ones.
+async function settleDuels() {
+  const now = Math.floor(Date.now() / 1000);
+  const list = await conn.getProgramAccounts(PROGRAM_ID, { filters: [{ memcmp: { offset: 0, bytes: bs58.encode(Uint8Array.from(ACCT.Duel)) } }] });
+  for (const { pubkey, account } of list) {
+    const d = decodeDuel(account.data);
+    if (d.state > 1 || now < d.deadline) continue;
+    if (d.state === 1) {
+      const ii = await conn.getAccountInfo(indexPda(d.market));
+      const idx = ii ? decodeIndex(ii.data) : null;
+      const fresh = idx && idx.lastTime >= d.deadline && idx.lastTime <= d.deadline + 3600;
+      if (!fresh && now <= d.deadline + 3 * 86400) continue; // wait for a reading after the deadline
+    }
+    const opp = d.state === 1 ? d.opponent : d.creator;
+    try { console.log(`  duel ${pubkey.toBase58().slice(0, 6)} settled:`, await send(keeper, settleDuelIx(pubkey, d.market, d.creator, opp))); }
+    catch (e) { console.log(`  duel ${pubkey.toBase58().slice(0, 6)} settle failed:`, e.message?.slice(0, 160)); }
   }
 }
 
@@ -119,6 +145,7 @@ while (Date.now() - started < RUN_FOR) {
     if ((await solBalance(keeper.publicKey)) < 0.2) await tryAirdrop(keeper.publicKey);
     await pushAll();
     await settleFilled();
+    await settleDuels();
     await backstop();
   } catch (e) {
     console.log("round error:", e.message);

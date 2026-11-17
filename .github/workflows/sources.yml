@@ -1,0 +1,17 @@
+name: Source test
+on:
+  workflow_dispatch:
+  push:
+    paths: ["keeper/sources.js", "keeper/markets.js", "tools/sourcetest.mjs"]
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - run: npm ci && node tools/sourcetest.mjs
+        env:
+          TWITCH_CLIENT_ID: ${{ secrets.TWITCH_CLIENT_ID }}
+          TWITCH_CLIENT_SECRET: ${{ secrets.TWITCH_CLIENT_SECRET }}
+          GITHUB_TOKEN: ${{ github.token }}
