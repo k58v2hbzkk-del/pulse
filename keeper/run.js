@@ -96,6 +96,7 @@ async function settleDuels() {
 // ------------------------------------------------------------ House duels
 // Keeps a few open challenges alive at all times, so there's always something to take.
 const HOUSE_OPEN = Number(process.env.HOUSE_DUELS || 3);
+const sol = (env, d) => BigInt(Math.round(Number(process.env[env] || d) * 1e9));
 const HOUSE_STAKE = sol("HOUSE_STAKE_SOL", 0.05);
 let lastHouse = 0;
 async function houseDuels() {
@@ -133,7 +134,6 @@ async function houseDuels() {
 // Takes the thin side so every trader always has a counterparty. Matches user flow
 // up to MM_MAX_PER_MARKET_SOL per market. Never holds both sides of a market.
 const MM_ON = process.env.MM_ENABLED !== "0";
-const sol = (env, d) => BigInt(Math.round(Number(process.env[env] || d) * 1e9));
 const MM_MAX = sol("MM_MAX_PER_MARKET_SOL", 0.5);
 const MM_RESERVE = sol("MM_RESERVE_SOL", 0.5); // always keep for keeper fees
 const MIN_ORDER = 10_000_000n; // 0.01 SOL
