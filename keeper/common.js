@@ -1,3 +1,4 @@
+import bs58 from "bs58";
 import { Connection, Keypair, Transaction, sendAndConfirmTransaction, LAMPORTS_PER_SOL } from "@solana/web3.js";
 
 export const RPC = process.env.RPC_URL || "https://api.devnet.solana.com";
@@ -6,7 +7,10 @@ export const conn = new Connection(RPC, "confirmed");
 export function loadKey(envName = "ADMIN_KEY") {
   const raw = process.env[envName];
   if (!raw) throw new Error(`Missing ${envName} secret (JSON array of the keypair)`);
-  return Keypair.fromSecretKey(Uint8Array.from(JSON.parse(raw)));
+  const t = raw.trim();
+  // accepts a JSON array (Solana CLI) or a base58 private key (exported from Phantom/Solflare)
+  const bytes = t.startsWith("[") ? Uint8Array.from(JSON.parse(t)) : bs58.decode(t);
+  return Keypair.fromSecretKey(bytes);
 }
 
 export async function send(payer, ...ixs) {

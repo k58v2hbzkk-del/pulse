@@ -7,7 +7,7 @@
   "scripts": {
     "setup": "node keeper/setup.js",
     "keeper": "node keeper/run.js",
-    "build": "mkdir -p dist && cp app/index.html dist/ && esbuild app/app.js --bundle --format=esm --platform=browser --minify --define:global=globalThis --outfile=dist/bundle.js"
+    "build": "mkdir -p dist && cp app/index.html app/og.png app/icon.png dist/ && esbuild app/app.js --bundle --format=esm --platform=browser --minify --define:global=globalThis --outfile=dist/bundle.js"
   },
   "dependencies": {
     "@solana/web3.js": "^1.98.0",

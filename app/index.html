@@ -4,104 +4,202 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
 <title>PULSE — trade attention</title>
-<meta name="description" content="Go long or short on what the internet is paying attention to. Perpetual markets on live attention data, on Solana." />
-<meta name="theme-color" content="#0b0b0c" />
+<meta name="description" content="Go long or short on what the world is playing right now. Perpetual markets on live attention data, on Solana." />
+<meta property="og:title" content="PULSE — trade attention" />
+<meta property="og:description" content="Perpetual markets on live player counts. No expiry, no liquidations, no house." />
+<meta property="og:image" content="./og.png" />
+<meta name="twitter:card" content="summary_large_image" />
+<link rel="icon" href="./icon.png" />
+<meta name="theme-color" content="#0a0a0a" />
 <link rel="preconnect" href="https://fonts.googleapis.com" />
-<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet" />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet" />
 <style>
   :root {
-    --bg: #0b0b0c; --card: #141416; --line: #26262a; --text: #f4f3ef; --mute: #8d8c88;
-    --long: #c6ff3d; --short: #ff5a4e; --accent: #ffb547;
-    --mono: "JetBrains Mono", ui-monospace, monospace; --sans: "Space Grotesk", system-ui, sans-serif;
+    --bg: #0a0a0a; --card: #131313; --card2: #1a1a1a; --line: #262626; --text: #f5f5f4; --mute: #8a8a87;
+    --brand: #ff8a1f; --brand2: #ffb547; --up: #2fd17d; --down: #f2495c;
+    --mono: "JetBrains Mono", ui-monospace, monospace; --sans: "Inter", system-ui, sans-serif;
   }
   * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { background: var(--bg); color: var(--text); font-family: var(--sans); min-height: 100vh; -webkit-font-smoothing: antialiased; }
-  button { font: inherit; cursor: pointer; border: 0; }
-  .wrap { max-width: 560px; margin: 0 auto; padding: 16px 16px 120px; }
-  header { display: flex; align-items: center; justify-content: space-between; padding: 6px 0 18px; }
-  .logo { display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: 22px; letter-spacing: -0.5px; }
-  .logo svg { width: 34px; height: 20px; }
-  .net { font-family: var(--mono); font-size: 10px; color: var(--accent); border: 1px solid #4a3a1c; padding: 2px 6px; border-radius: 99px; margin-left: 4px; }
-  .btn { background: var(--text); color: #000; padding: 10px 14px; border-radius: 12px; font-weight: 700; font-size: 14px; }
-  .btn.ghost { background: transparent; color: var(--text); border: 1px solid var(--line); }
-  .btn:disabled { opacity: .4; cursor: not-allowed; }
-  h1 { font-size: 34px; line-height: 1.02; letter-spacing: -1.2px; font-weight: 700; margin: 6px 0 10px; }
-  h1 em { font-style: normal; background: var(--long); color: #000; padding: 0 6px; border-radius: 6px; display: inline-block; transform: rotate(-2deg); }
-  .sub { color: var(--mute); font-size: 15px; line-height: 1.45; margin-bottom: 22px; }
-  .banner { font-family: var(--mono); font-size: 12px; color: var(--accent); background: #1d1708; border: 1px solid #4a3a1c; border-radius: 12px; padding: 10px 12px; margin-bottom: 16px; line-height: 1.5; }
-  .banner a { color: var(--accent); }
-  .list { display: grid; gap: 12px; }
-  .card { background: var(--card); border: 1px solid var(--line); border-radius: 18px; padding: 16px; text-align: left; color: var(--text); width: 100%; }
-  .row { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
-  .name { font-weight: 700; font-size: 17px; }
-  .lev { font-family: var(--mono); font-size: 11px; color: var(--mute); border: 1px solid var(--line); padding: 2px 6px; border-radius: 6px; }
-  .big { font-family: var(--mono); font-size: 26px; font-weight: 600; letter-spacing: -1px; }
-  .unit { font-size: 12px; color: var(--mute); font-family: var(--sans); font-weight: 400; letter-spacing: 0; }
-  .chg { font-family: var(--mono); font-size: 13px; }
-  .up { color: var(--long); } .down { color: var(--short); }
-  .spark { width: 100%; height: 54px; margin: 10px 0 8px; display: block; }
-  .pools { display: flex; height: 6px; border-radius: 99px; overflow: hidden; background: var(--line); }
-  .pools i { display: block; height: 100%; }
-  .poolnums { display: flex; justify-content: space-between; font-family: var(--mono); font-size: 11px; color: var(--mute); margin-top: 6px; }
-  .mine { margin-top: 10px; font-family: var(--mono); font-size: 12px; color: var(--text); }
-  /* sheet */
-  .sheet { position: fixed; inset: 0; background: rgba(0,0,0,.6); display: none; align-items: flex-end; justify-content: center; z-index: 10; }
+  html { scroll-behavior: smooth; overflow-x: hidden; }
+  body { background: var(--bg); color: var(--text); font-family: var(--sans); -webkit-font-smoothing: antialiased; overflow-x: hidden; }
+  button { font: inherit; cursor: pointer; border: 0; color: inherit; background: none; }
+  a { color: inherit; }
+  .wrap { max-width: 1080px; margin: 0 auto; padding: 0 18px; }
+  nav { position: sticky; top: 0; z-index: 5; background: rgba(10,10,10,.82); backdrop-filter: blur(14px); border-bottom: 1px solid #161616; }
+  nav .wrap { display: flex; align-items: center; justify-content: space-between; height: 64px; }
+  .logo { display: flex; align-items: center; gap: 10px; font-weight: 800; font-size: 22px; letter-spacing: -.6px; }
+  .mark { width: 30px; height: 30px; border-radius: 9px; background: linear-gradient(135deg, var(--brand), var(--brand2)); display: grid; place-items: center; box-shadow: 0 0 22px rgba(255,138,31,.35); }
+  .mark svg { width: 20px; height: 14px; }
+  .net { font-family: var(--mono); font-size: 10px; color: var(--brand2); border: 1px solid #3d2a12; padding: 2px 7px; border-radius: 99px; font-weight: 600; letter-spacing: 0; }
+  .btn { display: inline-flex; align-items: center; gap: 8px; background: linear-gradient(135deg, var(--brand), var(--brand2)); color: #140a00; padding: 12px 18px; border-radius: 12px; font-weight: 700; font-size: 15px; text-decoration: none; box-shadow: 0 8px 28px rgba(255,138,31,.25); }
+  .btn.ghost { background: var(--card); color: var(--text); border: 1px solid var(--line); box-shadow: none; }
+  .btn.sm { padding: 9px 13px; font-size: 13px; border-radius: 10px; }
+  .btn:disabled { opacity: .35; cursor: not-allowed; }
+  .hero { position: relative; padding: 34px 0 10px; }
+  .hero::before { content: ""; position: absolute; inset: -40px -18px auto; height: 520px; background: radial-gradient(closest-side, rgba(255,138,31,.16), transparent 70%); pointer-events: none; }
+  .heroGrid { display: grid; gap: 26px; position: relative; }
+  @media (min-width: 860px) { .heroGrid { grid-template-columns: 1.05fr 1fr; align-items: center; padding: 30px 0; } }
+  .eyebrow { display: inline-flex; align-items: center; gap: 8px; font-size: 12px; color: var(--brand2); background: #1c1309; border: 1px solid #3d2a12; padding: 6px 10px; border-radius: 99px; font-weight: 600; }
+  .eyebrow i { width: 7px; height: 7px; border-radius: 9px; background: var(--up); box-shadow: 0 0 10px var(--up); animation: blink 1.6s infinite; }
+  @keyframes blink { 50% { opacity: .3; } }
+  h1 { font-size: clamp(38px, 9vw, 62px); line-height: 1.02; letter-spacing: -2px; font-weight: 800; margin: 16px 0 14px; }
+  h1 span { background: linear-gradient(135deg, var(--brand), var(--brand2)); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .lead { color: #b5b5b1; font-size: 17px; line-height: 1.5; max-width: 480px; }
+  .ctas { display: flex; gap: 10px; margin: 22px 0 20px; flex-wrap: wrap; }
+  .trust { display: flex; gap: 16px 22px; flex-wrap: wrap; color: #cfcfcb; font-size: 14px; }
+  .trust div { display: flex; align-items: center; gap: 8px; }
+  .trust svg { width: 18px; height: 18px; color: var(--brand); }
+  .visual { position: relative; height: 340px; perspective: 1000px; }
+  .vcard { position: absolute; background: linear-gradient(180deg, #1b1b1b, #121212); border: 1px solid #2a2a2a; border-radius: 20px; padding: 16px; box-shadow: 0 30px 60px rgba(0,0,0,.6); }
+  .vmain { inset: 18px 8% 40px 6%; transform: rotateX(8deg) rotateY(-12deg) rotateZ(-2deg); }
+  .vchip { right: 2%; top: 0; padding: 10px 14px; transform: rotate(5deg); font-family: var(--mono); font-size: 14px; color: var(--up); border-color: #1f4d33; animation: float 5s ease-in-out infinite; }
+  .vchip2 { left: 0; bottom: 6px; padding: 10px 14px; transform: rotate(-4deg); font-size: 13px; animation: float 6s ease-in-out infinite reverse; }
+  @keyframes float { 50% { translate: 0 -8px; } }
+  .vline { width: 100%; height: 170px; display: block; margin-top: 12px; }
+  section { padding: 42px 0 8px; }
+  .sh { display: flex; align-items: end; justify-content: space-between; gap: 10px; margin-bottom: 16px; }
+  h2 { font-size: clamp(26px, 6vw, 38px); letter-spacing: -1.2px; line-height: 1.08; font-weight: 800; }
+  h2 span { color: var(--brand); }
+  .muted { color: var(--mute); font-size: 14px; line-height: 1.55; }
+  .banner { font-family: var(--mono); font-size: 12px; color: var(--brand2); background: #1c1309; border: 1px solid #3d2a12; border-radius: 12px; padding: 10px 12px; margin: 0 0 14px; line-height: 1.5; }
+  .banner a { color: var(--brand2); }
+  .rail { display: flex; gap: 14px; overflow-x: auto; scroll-snap-type: x mandatory; padding: 4px 18px 16px; margin: 0 -18px; scrollbar-width: none; }
+  .rail::-webkit-scrollbar { display: none; }
+  .mcard { flex: 0 0 min(300px, 82vw); scroll-snap-align: start; background: linear-gradient(180deg, #171717, #111); border: 1px solid var(--line); border-radius: 22px; padding: 18px; text-align: left; }
+  .mhead { display: flex; align-items: center; gap: 12px; }
+  .glyph { width: 42px; height: 42px; border-radius: 13px; display: grid; place-items: center; font-weight: 800; font-size: 15px; color: #fff; letter-spacing: -.5px; flex: none; }
+  .mname { font-weight: 700; font-size: 17px; }
+  .msub { font-size: 12px; color: var(--mute); margin-top: 2px; }
+  .mprice { display: flex; align-items: baseline; gap: 8px; margin: 16px 0 4px; }
+  .mprice b { font-size: 28px; letter-spacing: -1px; font-weight: 700; }
+  .mprice .u { color: var(--mute); font-size: 13px; }
+  .chg { font-family: var(--mono); font-size: 14px; margin-left: auto; }
+  .up { color: var(--up); } .down { color: var(--down); }
+  .spark { width: 100%; height: 70px; display: block; margin: 8px 0 12px; }
+  .mfoot { display: flex; justify-content: space-between; align-items: center; font-size: 13px; color: var(--mute); }
+  .mfoot b { color: var(--text); font-weight: 600; }
+  .tbtn { border: 1px solid var(--line); background: var(--card2); padding: 7px 12px; border-radius: 10px; font-size: 13px; font-weight: 600; color: var(--text); }
+  .pools { display: flex; height: 5px; border-radius: 99px; overflow: hidden; background: var(--line); margin-top: 12px; }
+  .pools i { height: 100%; }
+  .mine { margin-top: 10px; font-size: 12px; font-family: var(--mono); color: var(--brand2); }
+  .feats { display: grid; gap: 14px; }
+  @media (min-width: 760px) { .feats { grid-template-columns: repeat(3, 1fr); } }
+  .feat { background: var(--card); border: 1px solid var(--line); border-radius: 22px; padding: 22px; }
+  .ficon { width: 44px; height: 44px; border-radius: 12px; background: #1d140a; border: 1px solid #3d2a12; display: grid; place-items: center; color: var(--brand); margin-bottom: 16px; }
+  .ficon svg { width: 22px; height: 22px; }
+  .feat h3 { font-size: 20px; letter-spacing: -.5px; margin-bottom: 8px; font-weight: 700; }
+  .dotted { position: relative; overflow: hidden; text-align: center; background: radial-gradient(circle at 50% 0%, rgba(255,138,31,.14), transparent 60%), var(--card); }
+  .dotted::before { content: ""; position: absolute; inset: 0; background-image: radial-gradient(#2c2c2c 1px, transparent 1px); background-size: 16px 16px; opacity: .7; }
+  .dotted > * { position: relative; }
+  .dotted h3 { color: var(--brand); font-size: 26px; }
+  .steps { display: grid; gap: 12px; counter-reset: s; }
+  @media (min-width: 760px) { .steps { grid-template-columns: repeat(4, 1fr); } }
+  .step { background: var(--card); border: 1px solid var(--line); border-radius: 18px; padding: 18px; }
+  .step::before { counter-increment: s; content: "0" counter(s); font-family: var(--mono); color: var(--brand); font-size: 13px; display: block; margin-bottom: 10px; }
+  .step b { display: block; margin-bottom: 6px; font-size: 16px; }
+  .faq { background: var(--card); border: 1px solid var(--line); border-radius: 24px; padding: 22px 16px; }
+  .faq h2 { padding: 0 4px 14px; }
+  details { border: 1px solid var(--line); border-radius: 14px; padding: 14px 16px; margin-top: 10px; background: #101010; }
+  summary { list-style: none; cursor: pointer; font-weight: 600; font-size: 15px; display: flex; justify-content: space-between; gap: 10px; }
+  summary::-webkit-details-marker { display: none; }
+  summary::after { content: "⌄"; color: var(--mute); transition: transform .2s; }
+  details[open] summary::after { transform: rotate(180deg); }
+  details p { margin-top: 10px; }
+  footer { padding: 40px 0 60px; text-align: center; color: var(--mute); font-size: 13px; }
+  footer a { color: var(--text); text-decoration: none; font-weight: 600; }
+  .sheet { position: fixed; inset: 0; background: rgba(0,0,0,.65); display: none; align-items: flex-end; justify-content: center; z-index: 10; }
   .sheet.open { display: flex; }
-  .panel { background: #0f0f11; border: 1px solid var(--line); border-bottom: 0; border-radius: 22px 22px 0 0; width: 100%; max-width: 560px; max-height: 92vh; overflow: auto; padding: 18px 16px calc(24px + env(safe-area-inset-bottom)); }
+  .panel { background: #0f0f0f; border: 1px solid var(--line); border-bottom: 0; border-radius: 24px 24px 0 0; width: 100%; max-width: 520px; max-height: 92vh; overflow: auto; padding: 18px 16px calc(24px + env(safe-area-inset-bottom)); }
+  @media (min-width: 760px) { .sheet { align-items: center; } .panel { border-radius: 24px; border-bottom: 1px solid var(--line); } }
   .grab { width: 40px; height: 4px; background: var(--line); border-radius: 9px; margin: 0 auto 14px; }
-  .chart { width: 100%; height: 160px; display: block; margin: 12px 0 4px; }
+  .chart { width: 100%; height: 170px; display: block; margin: 12px 0 4px; }
   .axis { display: flex; justify-content: space-between; font-family: var(--mono); font-size: 10px; color: var(--mute); }
   .stat { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 14px 0; }
   .stat div { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 10px 12px; }
-  .stat b { display: block; font-family: var(--mono); font-size: 16px; margin-top: 2px; }
+  .stat b { display: block; font-family: var(--mono); font-size: 16px; margin-top: 3px; }
   .stat span { font-size: 11px; color: var(--mute); }
-  .amt { display: flex; gap: 8px; margin: 6px 0 10px; }
-  .amt input { flex: 1; background: var(--card); border: 1px solid var(--line); color: var(--text); border-radius: 12px; padding: 12px; font-family: var(--mono); font-size: 18px; min-width: 0; }
+  .amt input { width: 100%; background: var(--card); border: 1px solid var(--line); color: var(--text); border-radius: 12px; padding: 13px; font-family: var(--mono); font-size: 18px; margin: 8px 0 10px; }
+  .amt input:focus { outline: none; border-color: var(--brand); }
   .chips { display: flex; gap: 6px; margin-bottom: 12px; }
-  .chips button { background: var(--card); border: 1px solid var(--line); color: var(--mute); font-family: var(--mono); font-size: 12px; padding: 6px 10px; border-radius: 99px; }
+  .chips button { background: var(--card); border: 1px solid var(--line); color: var(--mute); font-family: var(--mono); font-size: 12px; padding: 6px 11px; border-radius: 99px; }
   .trade { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-  .trade button { padding: 15px; border-radius: 14px; font-weight: 700; font-size: 16px; color: #000; }
-  .goLong { background: var(--long); } .goShort { background: var(--short); }
-  .hint { font-size: 12px; color: var(--mute); line-height: 1.5; margin-top: 12px; }
+  .trade button { padding: 15px; border-radius: 14px; font-weight: 800; font-size: 16px; color: #050505; }
+  .goLong { background: var(--up); } .goShort { background: var(--down); color: #fff !important; }
+  .trade button:disabled, .close2 button:disabled { opacity: .35; }
   .close2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 8px; }
-  .toast { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); background: var(--text); color: #000; padding: 10px 14px; border-radius: 12px; font-size: 13px; font-weight: 500; z-index: 20; max-width: 92vw; display: none; }
-  .toast a { color: #000; }
-  .how { margin-top: 28px; border-top: 1px solid var(--line); padding-top: 18px; }
-  .how h3 { font-size: 15px; margin-bottom: 10px; }
-  .how p { color: var(--mute); font-size: 13px; line-height: 1.55; margin-bottom: 8px; }
-  .sign { margin-top: 26px; font-family: var(--mono); font-size: 11px; color: var(--mute); text-align: center; }
-  .sign a { color: var(--text); text-decoration: none; }
+  .hint { font-size: 12px; color: var(--mute); line-height: 1.5; margin-top: 12px; }
+  .toast { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); background: var(--text); color: #000; padding: 11px 15px; border-radius: 12px; font-size: 13px; font-weight: 500; z-index: 20; max-width: 92vw; display: none; }
+  .toast a { color: #000; font-weight: 700; }
 </style>
 </head>
 <body>
-<div class="wrap">
-  <header>
-    <div class="logo">
-      <svg viewBox="0 0 34 20" fill="none"><path d="M1 12h7l3-9 5 15 4-11 3 5h10" stroke="#c6ff3d" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
-      PULSE <span class="net" id="net">DEVNET</span>
+<nav><div class="wrap">
+  <div class="logo"><span class="mark"><svg viewBox="0 0 20 14" fill="none"><path d="M1 8h4l2-6 3 10 3-8 2 4h4" stroke="#140a00" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg></span>PULSE <span class="net">DEVNET</span></div>
+  <button class="btn sm" id="connect">Connect</button>
+</div></nav>
+
+<main class="wrap">
+  <div class="hero"><div class="heroGrid">
+    <div>
+      <span class="eyebrow"><i></i> Live on Solana devnet · free to try</span>
+      <h1>Trade what the world is <span>playing.</span></h1>
+      <p class="lead">Go long or short on live player counts. When a game blows up, longs win. When players leave, shorts win. Perpetual, on-chain, every minute.</p>
+      <div class="ctas"><a class="btn" href="#markets">Start Trading →</a><a class="btn ghost" href="#how">How it works</a></div>
+      <div class="trust">
+        <div><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6l8-3z"/><path d="M9 12l2 2 4-4"/></svg>Non-custodial</div>
+        <div><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M5 19L19 5"/></svg>No liquidations</div>
+        <div><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12h4l3-8 4 16 3-8h4"/></svg>Live on-chain data</div>
+      </div>
     </div>
-    <button class="btn" id="connect">Connect</button>
-  </header>
+    <div class="visual" aria-hidden="true">
+      <div class="vcard vmain" id="heroCard"></div>
+      <div class="vcard vchip">LONG +12.4%</div>
+      <div class="vcard vchip2"><span class="muted" style="font-size:11px">Players now</span><br><b style="font-family:var(--mono)" id="heroPlayers">—</b></div>
+    </div>
+  </div></div>
 
-  <h1>Trade <em>attention.</em></h1>
-  <p class="sub">Go long or short on what the world is playing right now. Live player counts, on-chain every minute. No expiry, no liquidations, no house.</p>
-
-  <div class="banner" id="banner" hidden></div>
-  <div class="list" id="list"></div>
-
-  <section class="how">
-    <h3>How it works</h3>
-    <p><b>Two pools per market.</b> Longs in one, shorts in the other. When the player count moves, value flows from the losing pool to the winning pool, times the market's leverage.</p>
-    <p><b>Nobody can owe what isn't there.</b> Winners are paid only from the other side's pool, so there are no liquidations and no liquidity providers to fund.</p>
-    <p><b>Fair fills.</b> Orders fill at the price after the next update, so nobody can trade on a number they already saw.</p>
-    <p><b>Free to try.</b> This is devnet. Tap "Get test dollars" and trade with fake money.</p>
+  <section id="markets">
+    <div class="sh"><div><h2>Markets <span>live</span></h2><p class="muted" style="margin-top:6px">Swipe. Tap a market to trade.</p></div></div>
+    <div class="banner" id="banner" hidden></div>
+    <div class="rail" id="list"></div>
   </section>
-  <p class="sign">built by Tajudeen · <a href="https://x.com/Tajudeen" target="_blank" rel="noopener">@Tajudeen</a></p>
-</div>
+
+  <section>
+    <div class="feats">
+      <div class="feat"><div class="ficon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="6" width="18" height="13" rx="3"/><path d="M16 12h2M3 9h18"/></svg></div>
+        <h3>No broker, no expiry</h3><p class="muted">Trade straight from your wallet. Positions never expire. Hold for a minute or a month.</p></div>
+      <div class="feat"><div class="ficon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v20M5 9l7-7 7 7"/></svg></div>
+        <h3>Nobody is owed what isn't there</h3><p class="muted">Winners are paid from the other side's pool. No house, no liquidity providers, no bad debt. Your loss is capped at what you put in.</p></div>
+      <div class="feat dotted"><h3>Fair fills</h3><p class="muted" style="margin-top:8px">Orders fill at the price after the next update, so nobody trades on a number they already saw.</p></div>
+    </div>
+  </section>
+
+  <section id="how">
+    <h2 style="margin-bottom:16px">How it <span>works</span></h2>
+    <div class="steps">
+      <div class="step"><b>Pick a market</b><span class="muted">Each game is a market. Its index is the live number of people playing.</span></div>
+      <div class="step"><b>Go long or short</b><span class="muted">Longs sit in one pool, shorts in the other. Each market has fixed leverage.</span></div>
+      <div class="step"><b>The number moves</b><span class="muted">Every minute, value flows from the losing pool to the winning pool.</span></div>
+      <div class="step"><b>Close anytime</b><span class="muted">Your share of the pool is paid back to your wallet.</span></div>
+    </div>
+  </section>
+
+  <section>
+    <div class="faq">
+      <h2>FAQ</h2>
+      <details open><summary>What can I trade?</summary><p class="muted">Live player counts of major games on Steam. More attention indexes (views, streams, searches) are on the roadmap.</p></details>
+      <details><summary>Where does the data come from?</summary><p class="muted">A keeper reads Steam's public player-count API and posts it on-chain every minute. Every price is visible on Solana.</p></details>
+      <details><summary>Can I get liquidated?</summary><p class="muted">No. You hold a share of a pool. It shrinks when you're wrong, but it never goes below zero and nobody force-closes you.</p></details>
+      <details><summary>Is this real money?</summary><p class="muted">Not yet. PULSE runs on Solana devnet with free test dollars. Tap "Get test dollars" inside any market.</p></details>
+      <details><summary>Why does my order take a couple of minutes?</summary><p class="muted">Fair fills. Your order fills at the price after the next update, so nobody can trade on data they already saw.</p></details>
+    </div>
+  </section>
+
+  <footer>PULSE · perpetual markets on attention · built by <a href="https://x.com/Tajudeen" target="_blank" rel="noopener">Tajudeen @Tajudeen</a></footer>
+</main>
 
 <div class="sheet" id="sheet"><div class="panel" id="panel"></div></div>
 <div class="toast" id="toast"></div>
-
 <script type="module" src="./bundle.js"></script>
 </body>
 </html>

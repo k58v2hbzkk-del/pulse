@@ -18,10 +18,16 @@ jobs:
         run: |
           sh -c "$(curl -sSfL https://release.anza.xyz/${{ inputs.solana_version }}/install)"
           echo "$HOME/.local/share/solana/install/active_release/bin" >> $GITHUB_PATH
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - run: npm ci
       - name: Write keys
+        env:
+          ADMIN_KEY: ${{ secrets.ADMIN_KEY }}
+          PROGRAM_KEY: ${{ secrets.PROGRAM_KEY }}
         run: |
-          echo '${{ secrets.ADMIN_KEY }}' > admin.json
-          echo '${{ secrets.PROGRAM_KEY }}' > program.json
+          node keeper/keyfile.js admin.json
+          ADMIN_KEY="$PROGRAM_KEY" node keeper/keyfile.js program.json
           solana config set --url "$RPC_URL" --keypair admin.json
           echo "Deployer: $(solana address)  balance: $(solana balance)"
       - name: Build program
@@ -31,12 +37,10 @@ jobs:
           ls -la target/deploy/
           solana airdrop 2 || echo "airdrop rate-limited; using existing balance"
           solana program deploy target/deploy/pulse.so --program-id program.json --keypair admin.json --url "$RPC_URL"
-      - uses: actions/setup-node@v4
-        with: { node-version: 22 }
       - name: Create config + markets
         env:
           ADMIN_KEY: ${{ secrets.ADMIN_KEY }}
-        run: npm ci && node keeper/setup.js
+        run: node keeper/setup.js
       - name: Clean up keys
         if: always()
         run: rm -f admin.json program.json

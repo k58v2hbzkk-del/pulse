@@ -32,7 +32,7 @@ function linePath(vals, w, h, pad = 2) {
 }
 function chartSvg(vals, w, h, cls) {
   const up = vals.length > 1 && vals[vals.length - 1] >= vals[0];
-  const color = up ? "var(--long)" : "var(--short)";
+  const color = up ? "var(--up)" : "var(--down)";
   const d = linePath(vals, w, h);
   const area = d ? `${d} L${w - 2},${h} L2,${h} Z` : "";
   return `<svg class="${cls}" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none">
@@ -108,8 +108,19 @@ function positionView(x) {
 }
 
 // ------------------------------------------------------------ render
+const GLYPH = ["linear-gradient(135deg,#ff8a1f,#ff4d2e)", "linear-gradient(135deg,#e0483e,#7a1d16)", "linear-gradient(135deg,#f2b33d,#a0661a)", "linear-gradient(135deg,#d6336c,#5c1230)", "linear-gradient(135deg,#ff6b3d,#8a2a10)"];
+const initials = (n) => n.split(/[\s:-]+/).filter(Boolean).map((w) => w[0]).join("").slice(0, 3).toUpperCase();
+
 function render() {
-  $("list").innerHTML = state.markets.map((x) => {
+  const top = state.markets[0];
+  if (top) {
+    const vals = top.hist.map((h) => Number(h.price));
+    $("heroCard").innerHTML = `<div class="mhead"><span class="glyph" style="background:${GLYPH[0]}">${initials(top.m.name)}</span>
+      <div><div class="mname">${top.m.name}</div><div class="msub">${top.m.leverage}x perpetual</div></div></div>
+      ${chartSvg(vals.length > 1 ? vals : [1, 1], 400, 170, "vline")}`;
+    $("heroPlayers").textContent = fmtN(top.m.price);
+  }
+  $("list").innerHTML = state.markets.map((x, k) => {
     const vals = x.hist.map((h) => Number(h.price));
     const first = vals.length ? vals[0] : Number(x.m.price);
     const ch = pct(Number(x.m.price), first);
@@ -118,22 +129,22 @@ function render() {
     let mine = "";
     if (pv && (pv.longVal || pv.shortVal || pv.pos.pending)) {
       const parts = [];
-      if (pv.longVal) parts.push(`<span class="up">LONG $${P.fmtUsd(pv.longVal)}</span>`);
-      if (pv.shortVal) parts.push(`<span class="down">SHORT $${P.fmtUsd(pv.shortVal)}</span>`);
-      if (pv.pos.pending) parts.push(pv.ready ? "order filled · tap to finish" : `order filling · ${pv.updatesLeft} update${pv.updatesLeft === 1 ? "" : "s"}`);
+      if (pv.longVal) parts.push(`LONG $${P.fmtUsd(pv.longVal)}`);
+      if (pv.shortVal) parts.push(`SHORT $${P.fmtUsd(pv.shortVal)}`);
+      if (pv.pos.pending) parts.push(pv.ready ? "order filled" : `filling · ${pv.updatesLeft} update${pv.updatesLeft === 1 ? "" : "s"}`);
       mine = `<div class="mine">You: ${parts.join(" · ")}</div>`;
     }
-    return `<button class="card" data-id="${x.m.id}">
-      <div class="row"><span class="name">${x.m.name}</span><span class="lev">${x.m.leverage}x</span></div>
-      <div class="row" style="margin-top:6px"><span class="big">${fmtN(x.m.price)} <span class="unit">playing now</span></span>
-        <span class="chg ${ch >= 0 ? "up" : "down"}">${ch >= 0 ? "+" : ""}${ch.toFixed(2)}%</span></div>
-      ${chartSvg(vals.length > 1 ? vals : [first, first], 300, 54, "spark")}
-      <div class="pools"><i style="width:${(lb / tot) * 100}%;background:var(--long)"></i><i style="width:${(sb / tot) * 100}%;background:var(--short)"></i></div>
-      <div class="poolnums"><span>LONG $${P.fmtUsd(x.m.longBalance)}</span><span>updated ${ago(x.m.lastUpdate)}</span><span>SHORT $${P.fmtUsd(x.m.shortBalance)}</span></div>
+    return `<button class="mcard" data-id="${x.m.id}">
+      <div class="mhead"><span class="glyph" style="background:${GLYPH[k % GLYPH.length]}">${initials(x.m.name)}</span>
+        <div><div class="mname">${x.m.name}</div><div class="msub">${x.m.leverage}x · updated ${ago(x.m.lastUpdate)}</div></div></div>
+      <div class="mprice"><b>${fmtN(x.m.price)}</b><span class="u">players</span><span class="chg ${ch >= 0 ? "up" : "down"}">${ch >= 0 ? "+" : ""}${ch.toFixed(2)}%</span></div>
+      ${chartSvg(vals.length > 1 ? vals : [first, first], 300, 70, "spark")}
+      <div class="mfoot"><span>Pools <b>$${P.fmtUsd(x.m.longBalance + x.m.shortBalance)}</b></span><span class="tbtn">Trade ›</span></div>
+      <div class="pools"><i style="width:${(lb / tot) * 100}%;background:var(--up)"></i><i style="width:${(sb / tot) * 100}%;background:var(--down)"></i></div>
       ${mine}
     </button>`;
   }).join("");
-  document.querySelectorAll(".card").forEach((c) => (c.onclick = () => openSheet(Number(c.dataset.id))));
+  document.querySelectorAll(".mcard").forEach((c) => (c.onclick = () => openSheet(Number(c.dataset.id))));
   $("connect").textContent = wallet ? `${wallet.publicKey.toBase58().slice(0, 4)}…${wallet.publicKey.toBase58().slice(-4)}` : "Connect";
   if (openId != null) renderSheet();
 }
@@ -147,7 +158,7 @@ function renderSheet() {
   const pv = positionView(x);
   const pending = pv?.pos.pending;
   let action = "";
-  if (!wallet) action = `<button class="btn" style="width:100%;padding:15px" id="sConnect">Connect wallet to trade</button>`;
+  if (!wallet) action = `<button class="btn" style="width:100%;padding:15px;justify-content:center" id="sConnect">Connect wallet to trade</button>`;
   else {
     action = `
       <div class="row" style="font-size:12px;color:var(--mute)"><span>Your test dollars: <b style="color:var(--text)">$${P.fmtUsd(state.usd)}</b></span>
@@ -162,13 +173,13 @@ function renderSheet() {
       ${pending ? `<p class="hint">${pv.ready ? "Your last order is filled. Your next action finishes it automatically (the keeper also does this for you)." : `Your order fills after ${pv.updatesLeft} more price update${pv.updatesLeft === 1 ? "" : "s"} (about ${pv.updatesLeft} min).`}</p>` : ""}`;
   }
   $("panel").innerHTML = `<div class="grab"></div>
-    <div class="row"><span class="name" style="font-size:20px">${x.m.name}</span><span class="lev">${x.m.leverage}x · perpetual</span></div>
-    <div class="big" style="margin-top:8px">${fmtN(x.m.price)} <span class="unit">players right now</span></div>
+    <div class="row"><span class="mname" style="font-size:20px">${x.m.name}</span><span class="net">${x.m.leverage}x PERPETUAL</span></div>
+    <div class="mprice"><b>${fmtN(x.m.price)}</b><span class="u">players right now</span></div>
     ${chartSvg(vals.length > 1 ? vals : [1, 1], 600, 160, "chart")}
     <div class="axis"><span>${first ? new Date(first.time * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : ""}</span><span>live Steam data · on-chain</span><span>${last ? new Date(last.time * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : ""}</span></div>
     <div class="stat">
       <div><span>If players +1%, longs earn</span><b class="up">+${(sens.longGain * 100).toFixed(2)}%</b></div>
-      <div><span>If players −1%, shorts earn</span><b class="down">+${(sens.shortGain * 100).toFixed(2)}%</b></div>
+      <div><span>If players −1%, shorts earn</span><b class="up">+${(sens.shortGain * 100).toFixed(2)}%</b></div>
       <div><span>Long pool</span><b>$${P.fmtUsd(x.m.longBalance)}</b></div>
       <div><span>Short pool</span><b>$${P.fmtUsd(x.m.shortBalance)}</b></div>
     </div>
