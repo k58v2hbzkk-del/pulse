@@ -230,9 +230,15 @@ async function connect() {
     toast(`No wallet found. <a href="https://phantom.app/ul/browse/${url}?ref=${url}">Open PULSE in Phantom</a>`, 9000);
     return;
   }
-  const res = await p.connect();
-  const pk = res?.publicKey || p.publicKey;
-  wallet = { publicKey: new PublicKey(pk.toString()), provider: p };
+  try {
+    const res = await p.connect();
+    const pk = res?.publicKey || p.publicKey;
+    wallet = { publicKey: new PublicKey(pk.toString()), provider: p };
+  } catch (e) {
+    toast(`Wallet didn't connect: ${e.message || e}. Open PULSE inside Phantom's browser and try again.`, 8000);
+    return;
+  }
+  render(); // show the wallet as connected right away
   await refresh();
 }
 $("connect").onclick = () => (wallet ? null : connect());
@@ -307,8 +313,19 @@ async function closeSide(x, side) {
 }
 
 // ------------------------------------------------------------ loop
+let fails = 0;
 async function refresh() {
-  try { await load(); render(); } catch (e) { console.error(e); }
+  try {
+    await load();
+    fails = 0;
+  } catch (e) {
+    console.error(e);
+    fails++;
+    $("banner").hidden = false;
+    $("banner").innerHTML = `Couldn't reach Solana devnet (${String(e.message || e).slice(0, 80)}). Retrying${fails > 2 ? " — if this keeps happening, switch between Wi-Fi and mobile data" : ""}…`;
+    setTimeout(refresh, Math.min(30_000, 2_000 * fails));
+  }
+  render(); // always update the page, even when the network call failed
 }
 refresh();
 setInterval(refresh, 15_000);
