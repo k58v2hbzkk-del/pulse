@@ -97,9 +97,39 @@ pub fn rolling_average(hours: &[i64], avgs: &[u64], now_hour: i64, current_avg: 
     (sum / n) as u64
 }
 
+/// Limit how far one reading can move from the last one (manipulation brake).
+pub fn clamp_step(last: u64, raw: u64, max_bps: u64) -> u64 {
+    if last == 0 {
+        return raw;
+    }
+    let hi = (last as u128 * (10_000 + max_bps) as u128 / 10_000) as u64;
+    let lo = (last as u128 * (10_000 - max_bps) as u128 / 10_000) as u64;
+    raw.clamp(lo.max(1), hi)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn clamp_step_limits_jumps() {
+        assert_eq!(clamp_step(0, 5_000, 1_500), 5_000);
+        assert_eq!(clamp_step(100_000, 1_000_000, 1_500), 115_000);
+        assert_eq!(clamp_step(100_000, 1, 1_500), 85_000);
+        assert_eq!(clamp_step(100_000, 104_000, 1_500), 104_000);
+    }
+
+    #[test]
+    fn one_fake_reading_barely_moves_the_index() {
+        // steady 100k for 23 full hours, then a dishonest +15% reading in a 60-sample hour
+        let now_hour = 1_000i64;
+        let mut hours = [0i64; 24];
+        let mut avgs = [0u64; 24];
+        for k in 1..24 { let h = now_hour - k; hours[(h.rem_euclid(24)) as usize] = h; avgs[(h.rem_euclid(24)) as usize] = 100_000; }
+        let cur = (59 * 100_000 + 115_000) / 60;
+        let idx = rolling_average(&hours, &avgs, now_hour, cur);
+        assert!(idx <= 100_011, "index moved to {idx}"); // ~0.01%
+    }
 
     #[test]
     fn rolling_average_cancels_daily_cycle() {

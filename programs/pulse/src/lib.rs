@@ -28,6 +28,10 @@ pub const INDEX_HOURS: usize = 24;
 pub const MAX_QUOTE_AGE_SLOTS: u64 = 300;
 /// Switchboard feed values are fixed-point with 18 decimals.
 pub const SB_PRECISION: i128 = 1_000_000_000_000_000_000;
+/// A single reading may move at most this much (bps) from the previous reading.
+/// Combined with the 24h average, a dishonest data source can only move the price
+/// slowly and in public, so traders can always exit first.
+pub const MAX_STEP_BPS: u64 = 1_500;
 pub const SIDE_SHORT: u8 = 1;
 
 #[program]
@@ -142,6 +146,7 @@ pub mod pulse {
             price
         };
         require!(raw > 0, PulseError::BadParam);
+        let raw = clamp_step(ix.last_raw, raw, MAX_STEP_BPS);
         let index_price = ix.record(raw, now);
         drop(ix);
         apply_price(&mut ctx.accounts.market, &ctx.accounts.history, index_price, now)

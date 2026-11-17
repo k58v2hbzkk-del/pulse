@@ -1,5 +1,7 @@
 # PULSE — trade attention
 
+[![Audit](https://github.com/k58v2hbzkk-del/pulse/actions/workflows/audit.yml/badge.svg)](https://github.com/k58v2hbzkk-del/pulse/actions/workflows/audit.yml) [![Tests](https://github.com/k58v2hbzkk-del/pulse/actions/workflows/ci.yml/badge.svg)](https://github.com/k58v2hbzkk-del/pulse/actions/workflows/ci.yml)
+
 **Perpetual markets on what the internet is paying attention to.** Go long or short on live attention data, starting with real-time Steam player counts. Built on Solana for the Solana Foundation *Perps and Prediction Markets* hackathon.
 
 > Will Marvel Rivals keep growing tonight? Is Counter-Strike past its daily peak? Today you can only have an opinion. On PULSE you can take a position.
@@ -20,7 +22,7 @@ Every perp DEX trades the same thing: token prices. Prediction markets trade yes
 
 Each market has a **LONG pool** and a **SHORT pool**, funded in SOL.
 
-1. **Verified data.** Switchboard's oracle network reads Steam's public player-count API and signs the reading. The PULSE program checks it's the canonical quote for that market's feed on the official queue, owned by the Switchboard quote program, and fresh (≤300 slots). Anyone can crank an update; nobody can choose the number.
+1. **Bounded, audited data.** A keeper posts Steam's public player count every minute. The program caps each reading's move at 15% (`MAX_STEP_BPS`), and an independent **Audit** workflow compares every on-chain reading to Steam's live API hourly (red run = bad data). The program also has a Switchboard-verified mode (anyone can crank, nobody can choose the number); Switchboard wound down in Sept 2026, so devnet runs the audited keeper and mainnet targets a zkTLS feed.
 2. **24h attention index, computed on-chain.** The program keeps hourly buckets and trades on the 24-hour rolling average. Daily peaks and dips cancel out, so the predictable cycle can't be farmed; only real trends move the price.
 3. When the index moves, value flows **from the losing pool to the winning pool**, scaled by the market's leverage. The transfer is `x / (1 + x)` of the losing pool, where `x = leverage × |move|`: about linear for small moves, and never more than 100%, so a pool is never wiped out.
 4. Traders hold **shares** of a pool. Share value rises and falls with the pool.

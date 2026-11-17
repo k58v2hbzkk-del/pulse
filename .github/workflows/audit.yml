@@ -1,0 +1,20 @@
+# Independent data audit: compares on-chain readings to Steam's live API every hour.
+# Fork this repo and you run your own auditor. Red = the keeper posted bad data.
+name: Audit
+on:
+  schedule:
+    - cron: "37 * * * *"
+  workflow_dispatch:
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - run: npm ci
+      - name: Compare on-chain data with Steam
+        env:
+          RPC_URL: ${{ secrets.RPC_URL || 'https://api.devnet.solana.com' }}
+        run: node keeper/audit.js

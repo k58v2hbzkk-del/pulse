@@ -118,7 +118,7 @@ const pendingOf = (m) => ({ long: m.pendLongDep[0] + m.pendLongDep[1], short: m.
 const livePlayers = (x) => (x.idx && x.idx.lastRaw ? x.idx.lastRaw : x.m.price);
 const sourceBadge = (x) => x.idx?.oracle
   ? `<span style="color:var(--up)">✓ Switchboard-verified</span>`
-  : `<span>keeper data</span>`;
+  : `<a href="https://github.com/k58v2hbzkk-del/pulse/actions/workflows/audit.yml" target="_blank" rel="noopener" style="color:var(--brand2);text-decoration:none">audited hourly ↗</a>`;
 const GLYPH = ["linear-gradient(135deg,#ff8a1f,#ff4d2e)", "linear-gradient(135deg,#e0483e,#7a1d16)", "linear-gradient(135deg,#f2b33d,#a0661a)", "linear-gradient(135deg,#d6336c,#5c1230)", "linear-gradient(135deg,#ff6b3d,#8a2a10)"];
 const initials = (n) => n.split(/[\s:-]+/).filter(Boolean).map((w) => w[0]).join("").slice(0, 3).toUpperCase();
 
