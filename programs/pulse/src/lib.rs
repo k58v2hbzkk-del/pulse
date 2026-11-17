@@ -39,6 +39,11 @@ pub const DUEL_MIN_STAKE: u64 = 10_000_000; // 0.01 SOL
 pub const DUEL_SETTLE_WINDOW: i64 = 3_600;
 /// If a matched duel can't be settled (no data) this long after its deadline, both get refunds.
 pub const DUEL_REFUND_AFTER: i64 = 3 * 86_400;
+pub const PRED_FEE_BPS: u64 = 100; // 1% of the pot at resolution
+pub const PRED_OPEN: u8 = 0;
+pub const PRED_YES: u8 = 1;
+pub const PRED_NO: u8 = 2;
+pub const PRED_VOID: u8 = 3;
 pub const DUEL_OPEN: u8 = 0;
 pub const DUEL_MATCHED: u8 = 1;
 pub const DUEL_SETTLED: u8 = 2;
@@ -372,6 +377,106 @@ pub mod pulse {
                 ctx.accounts.market.fees += fee;
                 if r == DuelResult::Creator { ctx.accounts.creator.add_lamports(pot - fee)?; } else { ctx.accounts.opponent.add_lamports(pot - fee)?; }
             }
+        }
+        Ok(())
+    }
+
+    // ------------------------------------------------------------ PREDICT mode (Polymarket-style)
+    /// Ask a YES/NO question about a market's live number:
+    /// "Will it be ABOVE (or BELOW) `target` at `deadline`?" Anyone can create one.
+    pub fn create_prediction(ctx: Context<CreatePrediction>, nonce: u64, above: bool, target: u64, deadline: i64) -> Result<()> {
+        let now = Clock::get()?.unix_timestamp;
+        require!(target > 0, PulseError::BadParam);
+        require!(deadline >= now + 1_800 && deadline <= now + 30 * 86_400, PulseError::BadDeadline);
+        require!(ctx.accounts.market.active, PulseError::Inactive);
+        let p = &mut ctx.accounts.prediction;
+        p.market = ctx.accounts.market.key();
+        p.creator = ctx.accounts.creator.key();
+        p.nonce = nonce;
+        p.above = above;
+        p.target = target;
+        p.deadline = deadline;
+        p.created = now;
+        p.state = PRED_OPEN;
+        p.bump = ctx.bumps.prediction;
+        Ok(())
+    }
+
+    /// Creates your bet slip for a question (once per wallet per question).
+    pub fn open_bet(ctx: Context<OpenBet>) -> Result<()> {
+        let b = &mut ctx.accounts.bet;
+        b.prediction = ctx.accounts.prediction.key();
+        b.owner = ctx.accounts.owner.key();
+        b.bump = ctx.bumps.bet;
+        ctx.accounts.prediction.bettors += 1;
+        Ok(())
+    }
+
+    /// Buy YES or NO. Odds are the pool split; winners share the whole pot (minus 1%).
+    /// Betting closes 10 minutes before the deadline.
+    pub fn place_bet(ctx: Context<PlaceBet>, yes: bool, amount: u64) -> Result<()> {
+        let now = Clock::get()?.unix_timestamp;
+        require!(amount >= MIN_DEPOSIT, PulseError::TooSmall);
+        let p = &mut ctx.accounts.prediction;
+        require!(p.state == PRED_OPEN, PulseError::DuelNotOpen);
+        require!(now <= p.deadline - 600, PulseError::BadDeadline);
+        let b = &mut ctx.accounts.bet;
+        if yes { p.yes_pool += amount; b.yes += amount; } else { p.no_pool += amount; b.no += amount; }
+        anchor_lang::system_program::transfer(
+            CpiContext::new(ctx.accounts.system_program.to_account_info(),
+                anchor_lang::system_program::Transfer { from: ctx.accounts.owner.to_account_info(), to: p.to_account_info() }),
+            amount,
+        )
+    }
+
+    /// Permissionless: resolves from the first audited reading posted after the deadline.
+    /// If nobody backed the winning side, or no reading arrives for 3 days, everyone is refunded.
+    pub fn resolve_prediction(ctx: Context<ResolvePrediction>) -> Result<()> {
+        let now = Clock::get()?.unix_timestamp;
+        let p = &mut ctx.accounts.prediction;
+        require!(now >= p.deadline, PulseError::TooEarly);
+        require!(p.state == PRED_OPEN, PulseError::DuelNotOpen);
+        let ix = ctx.accounts.index.load()?;
+        let fresh = ix.last_time >= p.deadline && ix.last_time <= p.deadline + DUEL_SETTLE_WINDOW;
+        if !fresh {
+            require!(now > p.deadline + DUEL_REFUND_AFTER, PulseError::NotFilledYet);
+            drop(ix);
+            p.state = PRED_VOID;
+            return Ok(());
+        }
+        let value = ix.last_raw;
+        drop(ix);
+        p.settled_value = value;
+        let yes_wins = pred_yes_wins(p.above, p.target, value);
+        let win_pool = if yes_wins { p.yes_pool } else { p.no_pool };
+        if win_pool == 0 || win_pool == p.yes_pool + p.no_pool {
+            // one-sided pot: nobody to pay or nobody to pay from → refund everyone
+            p.state = PRED_VOID;
+            return Ok(());
+        }
+        let total = p.yes_pool + p.no_pool;
+        let fee = total * PRED_FEE_BPS / 10_000;
+        p.payout_pool = total - fee;
+        p.state = if yes_wins { PRED_YES } else { PRED_NO };
+        p.sub_lamports(fee)?;
+        ctx.accounts.market.add_lamports(fee)?;
+        ctx.accounts.market.fees += fee;
+        Ok(())
+    }
+
+    /// Permissionless: pays a bet slip after resolution straight to its owner and closes it.
+    pub fn claim_bet(ctx: Context<ClaimBet>) -> Result<()> {
+        let p = &ctx.accounts.prediction;
+        let b = &ctx.accounts.bet;
+        let amount = match p.state {
+            PRED_YES => pred_payout(b.yes, p.yes_pool, p.payout_pool)?,
+            PRED_NO => pred_payout(b.no, p.no_pool, p.payout_pool)?,
+            PRED_VOID => b.yes + b.no,
+            _ => return err!(PulseError::TooEarly),
+        };
+        if amount > 0 {
+            ctx.accounts.prediction.sub_lamports(amount)?;
+            ctx.accounts.owner.add_lamports(amount)?;
         }
         Ok(())
     }
@@ -781,6 +886,94 @@ pub struct SettleDuel<'info> {
     pub opponent: UncheckedAccount<'info>,
 }
 
+// ---------------------------------------------------------------- PREDICT accounts
+
+#[account]
+#[derive(InitSpace)]
+pub struct Prediction {
+    pub market: Pubkey,
+    pub creator: Pubkey,
+    pub nonce: u64,
+    pub target: u64,
+    pub deadline: i64,
+    pub created: i64,
+    pub yes_pool: u64,
+    pub no_pool: u64,
+    pub payout_pool: u64,
+    pub settled_value: u64,
+    pub bettors: u32,
+    pub above: bool,
+    pub state: u8,
+    pub bump: u8,
+}
+
+#[account]
+#[derive(InitSpace)]
+pub struct Bet {
+    pub prediction: Pubkey,
+    pub owner: Pubkey,
+    pub yes: u64,
+    pub no: u64,
+    pub bump: u8,
+}
+
+#[derive(Accounts)]
+#[instruction(nonce: u64)]
+pub struct CreatePrediction<'info> {
+    #[account(mut)]
+    pub creator: Signer<'info>,
+    pub market: Account<'info, Market>,
+    #[account(init, payer = creator, space = 8 + Prediction::INIT_SPACE,
+        seeds = [b"pred", market.key().as_ref(), creator.key().as_ref(), nonce.to_le_bytes().as_ref()], bump)]
+    pub prediction: Account<'info, Prediction>,
+    pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
+pub struct OpenBet<'info> {
+    #[account(mut)]
+    pub owner: Signer<'info>,
+    #[account(mut)]
+    pub prediction: Account<'info, Prediction>,
+    #[account(init, payer = owner, space = 8 + Bet::INIT_SPACE,
+        seeds = [b"bet", prediction.key().as_ref(), owner.key().as_ref()], bump)]
+    pub bet: Account<'info, Bet>,
+    pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
+pub struct PlaceBet<'info> {
+    #[account(mut)]
+    pub owner: Signer<'info>,
+    #[account(mut)]
+    pub prediction: Account<'info, Prediction>,
+    #[account(mut, seeds = [b"bet", prediction.key().as_ref(), owner.key().as_ref()], bump = bet.bump, has_one = owner, has_one = prediction)]
+    pub bet: Account<'info, Bet>,
+    pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
+pub struct ResolvePrediction<'info> {
+    #[account(mut, has_one = market)]
+    pub prediction: Account<'info, Prediction>,
+    #[account(mut)]
+    pub market: Account<'info, Market>,
+    #[account(seeds = [b"index", market.key().as_ref()], bump)]
+    pub index: AccountLoader<'info, Index>,
+}
+
+#[derive(Accounts)]
+pub struct ClaimBet<'info> {
+    #[account(mut)]
+    pub prediction: Account<'info, Prediction>,
+    #[account(mut, close = owner, has_one = owner, has_one = prediction,
+        seeds = [b"bet", prediction.key().as_ref(), owner.key().as_ref()], bump = bet.bump)]
+    pub bet: Account<'info, Bet>,
+    /// CHECK: receives the payout; must equal bet.owner (has_one)
+    #[account(mut)]
+    pub owner: UncheckedAccount<'info>,
+}
+
 #[derive(Accounts)]
 pub struct PostMessage<'info> {
     pub author: Signer<'info>,
@@ -895,6 +1088,13 @@ mod duel_layout_dump {
         let key = k(6);
         let ch = anchor_lang::solana_program::hash::hashv(&[key.as_ref(), b"AB12CD34EF"]).to_bytes();
         let hex = |v: &[u8]| v.iter().map(|x| format!("{x:02x}")).collect::<String>();
+        let p = Prediction { market: k(1), creator: k(2), nonce: 3, target: 4, deadline: -5, created: 6, yes_pool: 7, no_pool: 8, payout_pool: 9, settled_value: 10, bettors: 11, above: true, state: 2, bump: 253 };
+        let mut pb = vec![]; p.try_serialize(&mut pb).unwrap();
+        let bt = Bet { prediction: k(1), owner: k(2), yes: 3, no: 4, bump: 252 };
+        let mut bb = vec![]; bt.try_serialize(&mut bb).unwrap();
+        let cp = instruction::CreatePrediction { nonce: 77, above: false, target: 9_500_000, deadline: 1_800_000_000 }.data();
+        let pl = instruction::PlaceBet { yes: true, amount: 50_000_000 }.data();
+        std::fs::write("/tmp/pred_layout.json", format!(r#"{{"pred":"{}","bet":"{}","create":"{}","place":"{}"}}"#, hex(&pb), hex(&bb), hex(&cp), hex(&pl))).unwrap();
         std::fs::write("/tmp/duel_layout.json", format!(r#"{{"duel":"{}","create":"{}","accept":"{}","post":"{}","codehash":"{}"}}"#, hex(&b), hex(&cd), hex(&ad), hex(&pm), hex(&ch))).unwrap();
     }
 }

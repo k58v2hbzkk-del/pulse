@@ -116,9 +116,36 @@ pub fn duel_outcome(above: bool, target: u64, value: u64) -> DuelResult {
     if (value > target) == above { DuelResult::Creator } else { DuelResult::Opponent }
 }
 
+/// PREDICT: does YES win? "ABOVE target" needs value > target; "BELOW target" needs value < target.
+pub fn pred_yes_wins(above: bool, target: u64, value: u64) -> bool {
+    if above { value > target } else { value < target }
+}
+
+/// PREDICT: a winning slip's share of the pot after fee: stake / winning_pool × payout_pool.
+pub fn pred_payout(stake: u64, win_pool: u64, payout_pool: u64) -> Result<u64, anchor_lang::error::Error> {
+    if win_pool == 0 { return Ok(0); }
+    u64::try_from((stake as u128) * (payout_pool as u128) / (win_pool as u128))
+        .map_err(|_| anchor_lang::error!(crate::PulseError::Math))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn prediction_math() {
+        assert!(pred_yes_wins(true, 700_000, 700_001));
+        assert!(!pred_yes_wins(true, 700_000, 700_000));
+        assert!(pred_yes_wins(false, 50, 49));
+        assert!(!pred_yes_wins(false, 50, 50));
+        // 3 SOL on YES (you have 1), 1 SOL on NO, YES wins: pot 4, 1% fee → 3.96; your third = 1.32
+        let payout = 3_960_000_000u64;
+        assert_eq!(pred_payout(1_000_000_000, 3_000_000_000, payout).unwrap(), 1_320_000_000);
+        // all winning slips together never take more than the payout pool
+        let a = pred_payout(1_000_000_001, 3_000_000_000, payout).unwrap();
+        let b = pred_payout(1_999_999_999, 3_000_000_000, payout).unwrap();
+        assert!(a + b <= payout);
+    }
 
     #[test]
     fn duel_outcomes() {

@@ -1,6 +1,6 @@
 import { Connection, PublicKey, Transaction, LAMPORTS_PER_SOL } from "@solana/web3.js";
 import * as P from "./sdk.js";
-import { MARKETS } from "../keeper/markets.js";
+import { MARKETS, fmtValue } from "../keeper/markets.js";
 
 const RPC = new URLSearchParams(location.search).get("rpc") || "https://api.devnet.solana.com";
 const DEMO = new URLSearchParams(location.search).has("demo");
@@ -9,16 +9,21 @@ const timedFetch = (url, opts = {}) => fetch(url, { ...opts, signal: AbortSignal
 const conn = new Connection(RPC, { commitment: "confirmed", fetch: timedFetch, disableRetryOnRateLimit: true });
 const MARKET_IDS = MARKETS.map((m) => m.id);
 const META = Object.fromEntries(MARKETS.map((m) => [m.id, m]));
-const UNIT = { steam: "playing now", twitch: "watching now", wiki: "views yesterday", github: "stars / day", narrative: "$M traded 24h", fng: "/ 100 mood", solana: "tx / second" };
-const CATS = [["all", "All"], ["crypto", "Crypto"], ["games", "Games"], ["streams", "Streams"], ["code", "Code"], ["topics", "Topics"]];
-const unitOf = (x) => UNIT[META[x.m.id]?.kind] || "now";
+const UNIT = { steam: "playing now", twitch: "watching now", wiki: "views yesterday", github: "stars / day", narrative: "$M traded 24h", fng: "/ 100 mood", solana: "tx / second", price: "live price", weather: "right now" };
+const CATS = [["all", "All"], ["crypto", "Crypto"], ["games", "Games"], ["weather", "Weather"], ["streams", "Streams"], ["code", "Code"], ["topics", "Topics"]];
+const unitOf = (x) => { const m = META[x.m.id]; return m?.kind === "global" ? (m.ref === "mcap" ? "total market cap" : "of all crypto") : UNIT[m?.kind] || "now"; };
+/** readings as people read them ($92,450.12 · 18.4°C · 54.2%) and back */
+const fmtV = (id, raw) => fmtValue(META[id], raw);
+const toDisp = (id, raw) => { const m = META[id] || {}; return (Number(raw) - (m.off || 0)) / 10 ** (m.dec || 0); };
+const fromDisp = (id, v) => { const m = META[id] || {}; return Math.round(v * 10 ** (m.dec || 0)) + (m.off || 0); };
 let cat = "all";
-let tab = new URLSearchParams(location.search).has("duel") ? "duels" : "perps";
+const QS = new URLSearchParams(location.search);
+let tab = QS.has("duel") ? "duels" : QS.has("perps") ? "perps" : "predict";
 const SOL = 1_000_000_000n;
 
 const $ = (id) => document.getElementById(id);
 let wallet = null; // { publicKey, provider }
-let state = { markets: [], positions: new Map(), sol: 0, duels: [] };
+let state = { markets: [], positions: new Map(), sol: 0, duels: [], preds: [], bets: new Map() };
 let openId = null;
 let busy = false;
 
@@ -86,6 +91,10 @@ async function load() {
       { pk: fake(42), d: { market: state.markets[3].pk, creator: fake(8), opponent: PublicKey.default, winner: PublicKey.default, stake: 500000000n, target: 25000n, settledValue: 0n, deadline: now + 3 * 86400, created: now - 60, above: false, state: 0, private: false } },
     ];
     $("banner").hidden = false;
+    state.house = fake(7);
+    const mk = (id) => state.markets.find((x) => x.m.id === id) || state.markets[0];
+    const q = (n, id, code, above, target, hours, yes, no, bettors) => ({ pk: fake(60 + n), p: { market: mk(id).pk, creator: fake(7), nonce: BigInt(now + hours * 3600) * 100n + BigInt(code), target: BigInt(target), deadline: now + hours * 3600, created: now - 600, yesPool: BigInt(yes * 1e9), noPool: BigInt(no * 1e9), payoutPool: 0n, settledValue: 0n, bettors, above, state: 0 } });
+    state.preds = [q(1, 1, 1, true, 690000, 1, 1.3, 0.9, 14), q(2, 1, 20, true, 750000, 8, 0.6, 1.8, 9), q(3, 4, 21, false, 22000, 8, 0.8, 0.4, 5), q(4, 2, 22, true, 520000, 30, 0.25, 0.25, 3)];
     $("banner").innerHTML = "PREVIEW MODE — sample data for design review, not live markets.";
     return;
   }
@@ -113,6 +122,15 @@ async function load() {
     state.duels = raw.map(({ pubkey, account }) => ({ pk: pubkey, d: P.decodeDuel(account.data) })).sort((a, b) => b.d.created - a.d.created);
   } catch (e) { console.warn("duels", e); }
 
+  try {
+    const raw = await conn.getProgramAccounts(P.PROGRAM_ID, { filters: [{ memcmp: { offset: 0, bytes: b58(Uint8Array.from(P.ACCT.Prediction)) } }] });
+    const cutoff = Date.now() / 1000 - 2 * 86400;
+    state.preds = raw.map(({ pubkey, account }) => ({ pk: pubkey, p: P.decodePrediction(account.data) })).filter((x) => x.p.state === 0 || x.p.deadline > cutoff);
+  } catch (e) { console.warn("predictions", e); }
+  if (wallet) try {
+    const raw = await conn.getProgramAccounts(P.PROGRAM_ID, { filters: [{ memcmp: { offset: 0, bytes: b58(Uint8Array.from(P.ACCT.Bet)) } }, { memcmp: { offset: 40, bytes: wallet.publicKey.toBase58() } }] });
+    state.bets = new Map(raw.map(({ account }) => { const b = P.decodeBet(account.data); return [b.prediction.toBase58(), b]; }));
+  } catch (e) { console.warn("bets", e); }
   if (wallet) try {
     const posPks = markets.map((x) => P.positionPda(x.pk, wallet.publicKey));
     const [posInfos, sol] = await Promise.all([
@@ -160,7 +178,7 @@ function render() {
     $("heroCard").innerHTML = `<div class="mhead"><span class="glyph" style="background:${GLYPH[0]}">${initials(top.m.name)}</span>
       <div><div class="mname">${top.m.name}</div><div class="msub">${top.m.leverage}x perpetual</div></div></div>
       ${chartSvg(vals.length > 1 ? vals : [1, 1], 400, 170, "vline")}`;
-    $("heroPlayers").textContent = fmtN(top.m.price);
+    $("heroPlayers").textContent = fmtV(top.m.id, top.m.price);
   }
   $("cats").innerHTML = CATS.filter(([c]) => c === "all" || state.markets.some((x) => META[x.m.id]?.cat === c))
     .map(([c, l]) => `<button data-cat="${c}" class="${c === cat ? "on" : ""}">${l}</button>`).join("");
@@ -183,8 +201,8 @@ function render() {
     return `<button class="mcard" data-id="${x.m.id}">
       <div class="mhead"><span class="glyph" style="background:${GLYPH[k % GLYPH.length]}">${initials(x.m.name)}</span>
         <div><div class="mname">${x.m.name}</div><div class="msub">${x.m.leverage}x · updated ${ago(x.m.lastUpdate)}</div></div></div>
-      <div class="mprice"><b>${fmtN(livePlayers(x))}</b><span class="u">${unitOf(x)}</span><span class="chg ${ch >= 0 ? "up" : "down"}">${ch >= 0 ? "+" : ""}${ch.toFixed(2)}%</span></div>
-      <div class="msub">24h index <b style="color:var(--text)">${fmtN(x.m.price)}</b> · ${sourceBadge(x)}</div>
+      <div class="mprice"><b>${fmtV(x.m.id, livePlayers(x))}</b><span class="u">${unitOf(x)}</span><span class="chg ${ch >= 0 ? "up" : "down"}">${ch >= 0 ? "+" : ""}${ch.toFixed(2)}%</span></div>
+      <div class="msub">24h index <b style="color:var(--text)">${fmtV(x.m.id, x.m.price)}</b> · ${sourceBadge(x)}</div>
       ${chartSvg(vals.length > 1 ? vals : [first, first], 300, 70, "spark")}
       <div class="mfoot"><span>Pools <b>${P.fmtSol(x.m.longBalance + x.m.shortBalance)} SOL</b></span><span class="tbtn">Trade ›</span></div>
       <div class="pools"><i style="width:${(lb / tot) * 100}%;background:var(--up)"></i><i style="width:${(sb / tot) * 100}%;background:var(--down)"></i></div>
@@ -193,10 +211,12 @@ function render() {
   }).join("");
   document.querySelectorAll(".mcard").forEach((c) => (c.onclick = () => openSheet(Number(c.dataset.id))));
   renderDuels();
-  $("perpsTab").hidden = tab !== "perps"; $("duelsTab").hidden = tab !== "duels";
+  renderPredict();
+  $("perpsTab").hidden = tab !== "perps"; $("duelsTab").hidden = tab !== "duels"; $("predictTab").hidden = tab !== "predict";
   document.querySelectorAll("#seg button").forEach((b) => b.classList.toggle("on", b.dataset.tab === tab));
   $("connect").textContent = wallet ? `${wallet.publicKey.toBase58().slice(0, 4)}…${wallet.publicKey.toBase58().slice(-4)}` : "Connect";
   if (openId != null) renderSheet();
+  else if (betDraft && $("sheet").classList.contains("open") && !document.activeElement?.dataset?.chatin) renderBetSheet();
 }
 
 function renderSheet() {
@@ -230,8 +250,8 @@ function renderSheet() {
   }
   $("panel").innerHTML = `<div class="grab"></div>
     <div class="row"><span class="mname" style="font-size:20px">${x.m.name}</span><span class="net">${x.m.leverage}x PERPETUAL</span></div>
-    <div class="mprice"><b>${fmtN(livePlayers(x))}</b><span class="u">${unitOf(x)}</span></div>
-    <div class="msub">You trade the <b style="color:var(--text)">24h average: ${fmtN(x.m.price)}</b> · ${sourceBadge(x)}</div>
+    <div class="mprice"><b>${fmtV(x.m.id, livePlayers(x))}</b><span class="u">${unitOf(x)}</span></div>
+    <div class="msub">You trade the <b style="color:var(--text)">24h average: ${fmtV(x.m.id, x.m.price)}</b> · ${sourceBadge(x)}</div>
     ${chartSvg(vals.length > 1 ? vals : [1, 1], 600, 160, "chart")}
     <div class="axis"><span>${first ? new Date(first.time * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : ""}</span><span>24h index · on-chain</span><span>${last ? new Date(last.time * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : ""}</span></div>
     <div class="stat">
@@ -258,13 +278,14 @@ function renderSheet() {
 }
 
 function openSheet(id) {
-  openId = id; $("sheet").classList.add("open"); renderSheet();
+  betDraft = null; openId = id; $("sheet").classList.add("open"); renderSheet();
   const x = state.markets.find((y) => y.m.id === id);
   if (x && !DEMO) loadChat(x.pk.toBase58()).then(() => openId === id && renderSheet());
 }
-$("sheet").onclick = (e) => { if (e.target.id === "sheet") { openId = null; $("sheet").classList.remove("open"); } };
+$("sheet").onclick = (e) => { if (e.target.id === "sheet") { openId = null; betDraft = null; $("sheet").classList.remove("open"); } };
 document.querySelectorAll("#seg button").forEach((b) => (b.onclick = () => { tab = b.dataset.tab; render(); }));
-$("newDuel").onclick = () => openDuelSheet();
+$("newDuel").onclick = () => { betDraft = null; openDuelSheet(); };
+$("newQ").onclick = () => openAsk();
 $("joinBtn").onclick = () => joinWithCode();
 
 // ------------------------------------------------------------ duels
@@ -311,7 +332,7 @@ function duelCard(item, mine) {
   let status = "";
   if (d.state === 0) status = now >= d.deadline ? `<span class="tag" style="background:#2a2a2a">expired · refunding</span>` : `<span class="tag" style="background:#1c1309;color:var(--brand2)">open</span>`;
   if (d.state === 1) status = now >= d.deadline ? `<span class="tag" style="background:#2a2a2a">settling…</span>` : `<span class="tag" style="background:#10291c;color:var(--up)">matched</span>`;
-  if (d.state === 2) { const won = me && d.winner.equals(me); status = `<span class="tag" style="background:${won ? "#10291c" : "#2a1416"};color:${won ? "var(--up)" : "var(--down)"}">${won ? "you won" : mine ? "you lost" : "settled"} · ${fmtN(d.settledValue)}</span>`; }
+  if (d.state === 2) { const won = me && d.winner.equals(me); status = `<span class="tag" style="background:${won ? "#10291c" : "#2a1416"};color:${won ? "var(--up)" : "var(--down)"}">${won ? "you won" : mine ? "you lost" : "settled"} · ${fmtV(x?.m.id, d.settledValue)}</span>`; }
   if (d.state === 3) status = `<span class="tag" style="background:#2a2a2a">refunded</span>`;
   const btns = [];
   if (d.state === 0 && now < d.deadline - 600 && !isCreator && (!d.private || codes[pk.toBase58()])) btns.push(`<button class="btn sm" data-accept="${pk.toBase58()}">Take the other side · ${P.fmtSol(d.stake)} SOL</button>`);
@@ -321,8 +342,8 @@ function duelCard(item, mine) {
   const priv = d.private ? `<span class="tag" style="background:#1d1630;color:#c8b6ff">private${isCreator && codes[pk.toBase58()] ? " · code " + pk.toBase58().slice(0, 6) + "-" + codes[pk.toBase58()] : ""}</span>` : "";
   const side = isOpp ? `<span class="tag" style="background:#2a2a2a">you said ${d.above ? "BELOW" : "ABOVE"}</span>` : "";
   return `<div class="duel" style="${focusDuel === pk.toBase58() ? "border-color:var(--brand)" : ""}">
-    <div class="claim"><span class="muted">${isCreator ? "You" : state.house && d.creator.equals(state.house) ? "🏠 PULSE House" : short(d.creator)} say${isCreator ? "" : "s"}</span> <b>${name}</b> will be <b style="color:${d.above ? "var(--up)" : "var(--down)"}">${d.above ? "ABOVE" : "BELOW"} ${fmtN(d.target)}</b> <span class="muted">${unit}</span> at <b>${when(d.deadline)}</b></div>
-    <div class="meta"><span>stake ${P.fmtSol(d.stake)} SOL each</span><span>pot ${P.fmtSol(d.stake * 2n)} SOL</span>${x ? `<span>now ${fmtN(livePlayers(x))}</span>` : ""}</div>
+    <div class="claim"><span class="muted">${isCreator ? "You" : state.house && d.creator.equals(state.house) ? "🏠 PULSE House" : short(d.creator)} say${isCreator ? "" : "s"}</span> <b>${name}</b> will be <b style="color:${d.above ? "var(--up)" : "var(--down)"}">${d.above ? "ABOVE" : "BELOW"} ${fmtV(x?.m.id, d.target)}</b> <span class="muted">${unit}</span> at <b>${when(d.deadline)}</b></div>
+    <div class="meta"><span>stake ${P.fmtSol(d.stake)} SOL each</span><span>pot ${P.fmtSol(d.stake * 2n)} SOL</span>${x ? `<span>now ${fmtV(x.m.id, livePlayers(x))}</span>` : ""}</div>
     <div class="row2">${status}${priv}${side}</div>
     ${btns.length ? `<div class="row2">${btns.join("")}</div>` : ""}
     ${chatOpen === pk.toBase58() ? chatBox(pk.toBase58()) : ""}
@@ -383,9 +404,9 @@ function renderDuelSheet() {
     <p class="hint" style="margin-top:4px">Call where a number lands. Your SOL is locked until someone takes the other side, or you cancel.</p>
     <div class="lbl">Market</div>
     <div class="opt">${state.markets.map((y) => `<button data-mk="${y.m.id}" class="${y.m.id === x.m.id ? "on" : ""}">${y.m.name}</button>`).join("")}</div>
-    <div class="lbl">It will be… (now ${fmtN(cur)} ${unitOf(x)})</div>
+    <div class="lbl">It will be… (now ${fmtV(x.m.id, cur)} ${unitOf(x)})</div>
     <div class="opt"><button data-dir="1" class="${dd.above ? "on" : ""}" style="${dd.above ? "color:var(--up)" : ""}">ABOVE ↑</button><button data-dir="0" class="${!dd.above ? "on" : ""}" style="${!dd.above ? "color:var(--down)" : ""}">BELOW ↓</button></div>
-    <div class="amt"><input id="dTarget" inputmode="numeric" value="${dd.target}" aria-label="Target number" /></div>
+    <div class="amt"><input id="dTarget" inputmode="decimal" value="${toDisp(x.m.id, dd.target)}" aria-label="Target number" /></div>
     <div class="lbl">When</div>
     <div class="opt">${[[1, "1 hour"], [6, "6 hours"], [24, "24 hours"], [72, "3 days"], [168, "7 days"]].map(([h, l]) => `<button data-h="${h}" class="${dd.hours === h ? "on" : ""}">${l}</button>`).join("")}</div>
     <div class="lbl">Who can join</div>
@@ -394,7 +415,7 @@ function renderDuelSheet() {
     <div class="opt">${[0.05, 0.1, 0.5, 1].map((v) => `<button data-st="${v}" class="${dd.stake === v ? "on" : ""}">${v} SOL</button>`).join("")}</div>
     ${wallet ? `<button class="btn" id="dCreate" style="width:100%;justify-content:center;padding:15px">Lock ${dd.stake} SOL and create duel</button>` : `<button class="btn" id="sConnect" style="width:100%;justify-content:center;padding:15px">Connect wallet</button>`}
     <p class="hint">Settles from the first audited reading after the deadline. Winner takes the pot minus 1%. Nobody accepts? You get your SOL back. Ties refund both.</p>`;
-  const save = () => { const v = Number($("dTarget").value.replace(/[^0-9]/g, "")); if (v > 0) dd.target = v; };
+  const save = () => { const v = Number($("dTarget").value.replace(/[^0-9.\-]/g, "")); if (Number.isFinite(v) && fromDisp(x.m.id, v) > 0) dd.target = fromDisp(x.m.id, v); };
   document.querySelectorAll("[data-mk]").forEach((b) => (b.onclick = () => { dd.id = Number(b.dataset.mk); const y = state.markets.find((z) => z.m.id === dd.id); dd.target = Number(livePlayers(y)); renderDuelSheet(); }));
   document.querySelectorAll("[data-dir]").forEach((b) => (b.onclick = () => { save(); dd.above = b.dataset.dir === "1"; renderDuelSheet(); }));
   document.querySelectorAll("[data-h]").forEach((b) => (b.onclick = () => { save(); dd.hours = Number(b.dataset.h); renderDuelSheet(); }));
@@ -424,10 +445,206 @@ function shareDuel(pkStr) {
   const item = state.duels.find((x) => x.pk.toBase58() === pkStr);
   const url = `${location.origin}${location.pathname}?duel=${pkStr}${codes[pkStr] ? `&code=${codes[pkStr]}` : ""}`;
   const x = item && mkOf(item.d.market);
-  const text = item && x ? `I'm calling ${x.m.name} ${item.d.above ? "ABOVE" : "BELOW"} ${fmtN(item.d.target)} ${unitOf(x)} by ${when(item.d.deadline)}. ${P.fmtSol(item.d.stake)} SOL says I'm right. Take the other side:` : "Take the other side of my PULSE duel:";
+  const text = item && x ? `I'm calling ${x.m.name} ${item.d.above ? "ABOVE" : "BELOW"} ${fmtV(x?.m.id, item.d.target)} ${unitOf(x)} by ${when(item.d.deadline)}. ${P.fmtSol(item.d.stake)} SOL says I'm right. Take the other side:` : "Take the other side of my PULSE duel:";
   navigator.clipboard?.writeText(url).catch(() => {});
   const code = codes[pkStr] ? ` Join code: <b>${pkStr.slice(0, 6)}-${codes[pkStr]}</b>.` : "";
   toast(`Link copied.${code} <a href="https://x.com/intent/post?text=${encodeURIComponent(text)}&url=${encodeURIComponent(url)}" target="_blank">Post it on X</a>`, 9000);
+}
+
+// ------------------------------------------------------------ PREDICT (Polymarket-style YES/NO)
+let pcat = "all";
+let betDraft = null; // { pk, yes, amount }
+let askDraft = null;
+const focusQ = QS.get("q");
+const isHouse = (k) => state.house && k.equals(state.house);
+const predCode = (p) => Number(p.nonce % 100n);
+const isUpDown = (p) => isHouse(p.creator) && predCode(p) >= 1 && predCode(p) < 20;
+const shortName = (m) => m.name.replace(/ price$| temperature$| on Wikipedia$/, "");
+function hourLabel(ts) { return new Date(ts * 1000).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }); }
+function dayLabel(ts) { return new Date(ts * 1000).toLocaleDateString([], { weekday: "short", month: "short", day: "numeric" }); }
+function endsIn(ts) {
+  const s = ts - Date.now() / 1000;
+  if (s <= 0) return "ended";
+  if (s < 3600) return `${Math.ceil(s / 60)}m left`;
+  if (s < 86400) return `${Math.floor(s / 3600)}h ${Math.floor((s % 3600) / 60)}m left`;
+  return `${Math.floor(s / 86400)}d ${Math.floor((s % 86400) / 3600)}h left`;
+}
+/** The question, in plain words. */
+function questionOf({ p }) {
+  const x = mkOf(p.market), m = x && META[x.m.id];
+  if (!m) return "Prediction";
+  const t = fmtV(m.id, p.target), at = p.deadline - p.created <= 3 * 3600 ? hourLabel(p.deadline) : `${dayLabel(p.deadline)}, ${hourLabel(p.deadline)}`;
+  if (isUpDown(p)) return `${shortName(m)} Up or Down · ${p.deadline - p.created <= 3 * 3600 ? hourLabel(p.deadline) : dayLabel(p.deadline)}`;
+  const more = p.above ? "more than" : "fewer than", ab = p.above ? "above" : "below";
+  switch (m.kind) {
+    case "price": return `Will ${shortName(m)} be ${ab} ${t} at ${at}?`;
+    case "steam": return `Will ${m.name} have ${more} ${t} players at ${at}?`;
+    case "twitch": return `Will ${m.name} have ${more} ${t} viewers at ${at}?`;
+    case "weather": return `Will ${shortName(m)} be ${ab} ${t} at ${at}?`;
+    case "wiki": return `Will ${shortName(m)} get ${more} ${t} Wikipedia views a day by ${at}?`;
+    case "github": return `Will ${m.name.replace(/ GitHub stars\/day/, "")} get ${more} ${t} GitHub stars a day by ${at}?`;
+    case "fng": return `Will the Crypto Fear & Greed index be ${ab} ${t} at ${at}?`;
+    case "solana": return `Will Solana do ${more} ${t} transactions a second at ${at}?`;
+    case "narrative": return `Will the ${m.name} trade ${more} $${t}M in 24h at ${at}?`;
+    case "global": return m.ref === "mcap" ? `Will the total crypto market cap be ${ab} ${t} at ${at}?` : `Will Bitcoin dominance be ${ab} ${t} at ${at}?`;
+    default: return `Will ${m.name} be ${ab} ${t} at ${at}?`;
+  }
+}
+const yesLabel = (p) => (isUpDown(p) ? "Up" : "Yes"), noLabel = (p) => (isUpDown(p) ? "Down" : "No");
+function predCard(item, k) {
+  const { pk, p } = item;
+  const x = mkOf(p.market), m = x && META[x.m.id];
+  const ch = Math.round(P.yesChance(p) * 100);
+  const vol = P.fmtSol(p.yesPool + p.noPool);
+  const id = pk.toBase58();
+  const bet = state.bets.get(id);
+  const now = Date.now() / 1000;
+  let foot = `<span>${vol} SOL vol</span><span>${p.bettors} trader${p.bettors === 1 ? "" : "s"}</span><span>${endsIn(p.deadline)}</span>`;
+  let body;
+  if (p.state === 0 && now < p.deadline - 600) {
+    body = `<div class="pbtns"><button class="pyes" data-bet="${id}" data-yes="1">${yesLabel(p)} <b>${ch}%</b></button><button class="pno" data-bet="${id}" data-yes="0">${noLabel(p)} <b>${100 - ch}%</b></button></div>`;
+  } else if (p.state === 0) {
+    body = `<div class="pstat">${now < p.deadline ? "Betting closed · result at " + hourLabel(p.deadline) : "Waiting for the first reading after the deadline…"}</div>`;
+  } else {
+    const r = p.state === 1 ? yesLabel(p) : p.state === 2 ? noLabel(p) : "Refunded";
+    body = `<div class="pstat" style="color:${p.state === 1 ? "var(--up)" : p.state === 2 ? "var(--down)" : "var(--mute)"}">Resolved: <b>${r}</b>${p.settledValue ? ` · ${fmtV(m?.id, p.settledValue)}` : ""}</div>`;
+  }
+  let mine = "";
+  if (bet && (bet.yes || bet.no)) {
+    const parts = [];
+    if (bet.yes) parts.push(`${P.fmtSol(bet.yes)} SOL on ${yesLabel(p)}`);
+    if (bet.no) parts.push(`${P.fmtSol(bet.no)} SOL on ${noLabel(p)}`);
+    mine = `<div class="mine">You: ${parts.join(" · ")}${p.state ? " · paying out…" : ""}</div>`;
+  }
+  const sub = isUpDown(p) ? `Price to beat <b>${fmtV(m?.id, p.target)}</b> · now ${x ? fmtV(m.id, livePlayers(x)) : "—"}` : `Now ${x ? fmtV(m.id, livePlayers(x)) : "—"}`;
+  return `<div class="pcard" style="${focusQ === id ? "border-color:var(--brand)" : ""}">
+    <div class="ptop"><span class="glyph" style="background:${GLYPH[k % GLYPH.length]}">${m ? initials(shortName(m)) : "?"}</span>
+      <button class="pq" data-open="${id}">${questionOf(item)}</button>
+      <div class="gauge" style="--p:${ch}"><b>${ch}%</b><span>${isUpDown(p) ? "up" : "chance"}</span></div></div>
+    <div class="psub">${sub}${isHouse(p.creator) ? "" : ` · asked by ${wallet && p.creator.equals(wallet.publicKey) ? "you" : short(p.creator)}`}</div>
+    ${body}
+    <div class="meta">${foot}</div>
+    ${mine}
+  </div>`;
+}
+function renderPredict() {
+  const now = Date.now() / 1000;
+  const PC = [["all", "Trending"], ["updown", "Up or Down"], ["ending", "Ending soon"], ["crypto", "Crypto"], ["games", "Games"], ["weather", "Weather"], ["more", "More"], ["mine", "My bets"]];
+  $("pcats").innerHTML = PC.map(([c, l]) => `<button data-pcat="${c}" class="${c === pcat ? "on" : ""}">${l}</button>`).join("");
+  document.querySelectorAll("[data-pcat]").forEach((b) => (b.onclick = () => { pcat = b.dataset.pcat; renderPredict(); }));
+  const catOf = (p) => META[mkOf(p.market)?.m.id]?.cat;
+  let list = state.preds.filter((x) => pcat === "mine" ? state.bets.has(x.pk.toBase58()) : x.p.state === 0 && now < x.p.deadline);
+  if (pcat === "updown") list = list.filter((x) => isUpDown(x.p));
+  else if (["crypto", "games", "weather"].includes(pcat)) list = list.filter((x) => catOf(x.p) === pcat && !isUpDown(x.p));
+  else if (pcat === "more") list = list.filter((x) => !["crypto", "games", "weather"].includes(catOf(x.p)));
+  const vol = (x) => Number(x.p.yesPool + x.p.noPool) + x.p.bettors * 2e7;
+  list.sort(pcat === "ending" ? (a, b) => a.p.deadline - b.p.deadline : pcat === "mine" ? (a, b) => b.p.deadline - a.p.deadline : (a, b) => vol(b) - vol(a) || a.p.deadline - b.p.deadline);
+  if (focusQ) list.sort((a, b) => (a.pk.toBase58() === focusQ ? -1 : b.pk.toBase58() === focusQ ? 1 : 0));
+  $("preds").innerHTML = list.length ? list.slice(0, 60).map(predCard).join("")
+    : `<div class="empty">${pcat === "mine" ? (wallet ? "No bets yet. Pick a question and tap Yes or No." : "Connect your wallet to see your bets.") : "New questions open every few minutes. Pull to refresh, or ask your own."}</div>`;
+  document.querySelectorAll("[data-bet]").forEach((b) => (b.onclick = () => openBet(b.dataset.bet, b.dataset.yes === "1")));
+  document.querySelectorAll("[data-open]").forEach((b) => (b.onclick = () => openBet(b.dataset.open, true)));
+}
+function openBet(id, yes) {
+  betDraft = { pk: id, yes, amount: betDraft?.amount || 0.1 };
+  openId = null;
+  $("sheet").classList.add("open");
+  renderBetSheet();
+  loadChat(id).then(() => betDraft?.pk === id && renderBetSheet());
+}
+function renderBetSheet() {
+  const item = state.preds.find((x) => x.pk.toBase58() === betDraft.pk);
+  if (!item) return;
+  const { p } = item, bd = betDraft;
+  const x = mkOf(p.market), m = x && META[x.m.id];
+  const ch = Math.round(P.yesChance(p) * 100);
+  const lam = BigInt(Math.round(bd.amount * 1e9));
+  const win = P.betPayout(p, bd.yes, lam);
+  const open = p.state === 0 && Date.now() / 1000 < p.deadline - 600;
+  $("panel").innerHTML = `<div class="grab"></div>
+    <div class="mname" style="font-size:19px;line-height:1.35">${questionOf(item)}</div>
+    <div class="psub" style="margin:6px 0 10px">${isUpDown(p) ? `Resolves <b>Up</b> if the price at ${hourLabel(p.deadline)} is above ${fmtV(m?.id, p.target)}.` : `Resolves from the first audited reading after ${dayLabel(p.deadline)}, ${hourLabel(p.deadline)}.`} Now ${x ? fmtV(m.id, livePlayers(x)) : "—"} · ${P.fmtSol(p.yesPool + p.noPool)} SOL vol</div>
+    <div class="pbtns big"><button class="pyes ${bd.yes ? "on" : ""}" data-side="1">${yesLabel(p)} <b>${ch}%</b></button><button class="pno ${!bd.yes ? "on" : ""}" data-side="0">${noLabel(p)} <b>${100 - ch}%</b></button></div>
+    <div class="lbl">Amount</div>
+    <div class="opt">${[0.05, 0.1, 0.25, 0.5, 1].map((v) => `<button data-am="${v}" class="${bd.amount === v ? "on" : ""}">${v} SOL</button>`).join("")}</div>
+    <div class="towin"><span>To win</span><b>${P.fmtSol(win)} SOL</b><span class="muted">${lam ? `${(Number(win) / Number(lam)).toFixed(2)}x your SOL` : ""}</span></div>
+    ${!open ? `<div class="pstat">Betting is closed for this question.</div>` : wallet ? `<button class="btn" id="bBuy" style="width:100%;justify-content:center;padding:15px;${bd.yes ? "" : "background:linear-gradient(135deg,#ff5a5f,#c2303a);color:#fff"}">Buy ${bd.yes ? yesLabel(p) : noLabel(p)} · ${bd.amount} SOL</button>` : `<button class="btn" id="sConnect" style="width:100%;justify-content:center;padding:15px">Connect wallet to bet</button>`}
+    <div class="row2" style="margin-top:10px"><button class="btn ghost sm" id="bShare">Share</button></div>
+    <p class="hint">Winners split the whole pot in proportion to their stake (1% fee). Odds move as people bet; your payout is set by the final pools, so "To win" is today's estimate. Winnings are sent to your wallet automatically.</p>
+    ${chatBox(betDraft.pk)}`;
+  document.querySelectorAll("[data-side]").forEach((b) => (b.onclick = () => { bd.yes = b.dataset.side === "1"; renderBetSheet(); }));
+  document.querySelectorAll("[data-am]").forEach((b) => (b.onclick = () => { bd.amount = Number(b.dataset.am); renderBetSheet(); }));
+  if ($("sConnect")) $("sConnect").onclick = connect;
+  if ($("bBuy")) $("bBuy").onclick = () => run(() => placeBet(item));
+  $("bShare").onclick = () => sharePred(item);
+  bindChat();
+}
+async function placeBet(item) {
+  const bd = betDraft;
+  if (bd.amount + 0.005 > state.sol) throw new Error("Not enough SOL. Get free devnet SOL at faucet.solana.com");
+  const ixs = [];
+  if (!state.bets.has(item.pk.toBase58())) ixs.push(P.openBetIx(wallet.publicKey, item.pk));
+  ixs.push(P.placeBetIx(wallet.publicKey, item.pk, bd.yes, BigInt(Math.round(bd.amount * 1e9))));
+  const sig = await sendTx(ixs);
+  setTimeout(() => toast(`You're in. <a href="#" id="tShare">Share your call</a>`, 7000), 300);
+  setTimeout(() => { const a = $("tShare"); if (a) a.onclick = (e) => { e.preventDefault(); sharePred(item, bd.yes); }; }, 400);
+  return sig;
+}
+function sharePred(item, yes) {
+  const url = `${location.origin}${location.pathname}?q=${item.pk.toBase58()}`;
+  const q = questionOf(item);
+  const text = yes == null ? `${q} ${Math.round(P.yesChance(item.p) * 100)}% say ${yesLabel(item.p)} on PULSE. What's your call?` : `${q} I'm on ${yes ? yesLabel(item.p) : noLabel(item.p)}. Prove me wrong:`;
+  navigator.clipboard?.writeText(url).catch(() => {});
+  toast(`Link copied. <a href="https://x.com/intent/post?text=${encodeURIComponent(text)}&url=${encodeURIComponent(url)}" target="_blank">Post it on X</a>`, 9000);
+}
+function openAsk() {
+  if (!state.markets.length) return toast("Markets are still loading.");
+  const x = state.markets.find((y) => META[y.m.id]?.kind === "price") || state.markets[0];
+  askDraft = askDraft || { id: x.m.id, above: true, target: Number(livePlayers(x)), hours: 24, yes: true, amount: 0.05 };
+  openId = null; betDraft = null;
+  $("sheet").classList.add("open");
+  renderAsk();
+}
+function renderAsk() {
+  const a = askDraft;
+  const x = state.markets.find((y) => y.m.id === a.id) || state.markets[0];
+  const cur = Number(livePlayers(x));
+  $("panel").innerHTML = `<div class="grab"></div>
+    <div class="mname" style="font-size:20px">Ask a question</div>
+    <p class="hint" style="margin-top:4px">Make any YES/NO call on a live number. You place the first bet; anyone can take either side.</p>
+    <div class="lbl">About</div>
+    <div class="opt">${state.markets.map((y) => `<button data-mk="${y.m.id}" class="${y.m.id === x.m.id ? "on" : ""}">${shortName(META[y.m.id] || y.m)}</button>`).join("")}</div>
+    <div class="lbl">Will it be… (now ${fmtV(x.m.id, cur)} ${unitOf(x)})</div>
+    <div class="opt"><button data-dir="1" class="${a.above ? "on" : ""}">ABOVE ↑</button><button data-dir="0" class="${!a.above ? "on" : ""}">BELOW ↓</button></div>
+    <div class="amt"><input id="aTarget" inputmode="decimal" value="${toDisp(x.m.id, a.target)}" aria-label="Target" /></div>
+    <div class="lbl">Ends in</div>
+    <div class="opt">${[[1, "1 hour"], [6, "6 hours"], [24, "24 hours"], [72, "3 days"], [168, "7 days"]].map(([h, l]) => `<button data-h="${h}" class="${a.hours === h ? "on" : ""}">${l}</button>`).join("")}</div>
+    <div class="lbl">Your first bet</div>
+    <div class="opt"><button data-y="1" class="${a.yes ? "on" : ""}">YES</button><button data-y="0" class="${!a.yes ? "on" : ""}">NO</button>${[0.05, 0.1, 0.5].map((v) => `<button data-am="${v}" class="${a.amount === v ? "on" : ""}">${v} SOL</button>`).join("")}</div>
+    ${wallet ? `<button class="btn" id="aCreate" style="width:100%;justify-content:center;padding:15px">Create question · bet ${a.amount} SOL on ${a.yes ? "YES" : "NO"}</button>` : `<button class="btn" id="sConnect" style="width:100%;justify-content:center;padding:15px">Connect wallet</button>`}
+    <p class="hint">Resolves automatically from the first audited reading after it ends. If nobody takes the other side, everyone is refunded.</p>`;
+  const save = () => { const v = Number($("aTarget").value.replace(/[^0-9.\-]/g, "")); if (Number.isFinite(v) && fromDisp(x.m.id, v) > 0) a.target = fromDisp(x.m.id, v); };
+  document.querySelectorAll("[data-mk]").forEach((b) => (b.onclick = () => { a.id = Number(b.dataset.mk); const y = state.markets.find((z) => z.m.id === a.id); a.target = Number(livePlayers(y)); renderAsk(); }));
+  document.querySelectorAll("[data-dir]").forEach((b) => (b.onclick = () => { save(); a.above = b.dataset.dir === "1"; renderAsk(); }));
+  document.querySelectorAll("[data-h]").forEach((b) => (b.onclick = () => { save(); a.hours = Number(b.dataset.h); renderAsk(); }));
+  document.querySelectorAll("[data-y]").forEach((b) => (b.onclick = () => { save(); a.yes = b.dataset.y === "1"; renderAsk(); }));
+  document.querySelectorAll("[data-am]").forEach((b) => (b.onclick = () => { save(); a.amount = Number(b.dataset.am); renderAsk(); }));
+  if ($("sConnect")) $("sConnect").onclick = connect;
+  if ($("aCreate")) $("aCreate").onclick = () => { save(); run(() => createQuestion(x)); };
+}
+async function createQuestion(x) {
+  const a = askDraft;
+  if (a.amount + 0.01 > state.sol) throw new Error("Not enough SOL. Get free devnet SOL at faucet.solana.com");
+  const nonce = BigInt(Date.now()) * 100n + 99n; // codes ≥ 20 = a plain YES/NO question
+  const deadline = Math.floor(Date.now() / 1000) + Math.max(a.hours * 3600, 1900);
+  const pred = P.predPda(x.pk, wallet.publicKey, nonce);
+  const sig = await sendTx([
+    P.createPredictionIx(wallet.publicKey, x.pk, { nonce, above: a.above, target: BigInt(a.target), deadline: BigInt(deadline) }),
+    P.openBetIx(wallet.publicKey, pred),
+    P.placeBetIx(wallet.publicKey, pred, a.yes, BigInt(Math.round(a.amount * 1e9))),
+  ]);
+  $("sheet").classList.remove("open"); askDraft = null; tab = "predict"; pcat = "mine";
+  return sig;
 }
 
 // ------------------------------------------------------------ wallet + tx
@@ -545,12 +762,13 @@ tick();
 setInterval(tick, 15_000);
 setInterval(async () => {
   if (DEMO) return;
-  const room = chatOpen || (openId != null && state.markets.find((y) => y.m.id === openId)?.pk.toBase58());
+  const betRoom = betDraft && $("sheet").classList.contains("open") ? betDraft.pk : null;
+  const room = chatOpen || betRoom || (openId != null && state.markets.find((y) => y.m.id === openId)?.pk.toBase58());
   if (!room) return;
   const typing = document.activeElement?.dataset?.chatin;
   await loadChat(room);
   if (typing) return; // don't wipe what someone is typing
-  if (chatOpen) renderDuels(); else renderSheet();
+  if (chatOpen) renderDuels(); else if (betRoom) renderBetSheet(); else renderSheet();
 }, 12_000);
 const p = provider();
 if (p?.isConnected && p.publicKey) wallet = { publicKey: new PublicKey(p.publicKey.toString()), provider: p };

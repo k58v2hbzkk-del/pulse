@@ -8,7 +8,7 @@ import { MARKETS } from "./markets.js";
 
 const ROUNDS = Number(process.env.AUDIT_ROUNDS || 5);
 // sources move a little between the keeper's read and ours; GitHub momentum is noisier
-const TOL = { steam: 5, twitch: 10, wiki: 1, github: 35, narrative: 10, fng: 1, solana: 30 };
+const TOL = { steam: 5, twitch: 10, wiki: 1, github: 35, narrative: 10, fng: 1, solana: 30, price: 1, global: 1, weather: 2 };
 const rows = [];
 let flagged = 0;
 

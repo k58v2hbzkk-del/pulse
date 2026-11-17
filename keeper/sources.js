@@ -82,6 +82,46 @@ export async function solanaTps() {
   return v;
 }
 
+/** USD prices for many coins in one call (CoinGecko), Coinbase spot as a fallback. */
+let cgPrices = null, cgPricesAt = 0;
+export async function coinPrice(id, symbol) {
+  if (!cgPrices || Date.now() - cgPricesAt > 45_000) {
+    try {
+      const ids = "bitcoin,ethereum,solana,binancecoin,ripple,dogecoin";
+      cgPrices = await (await get(`https://api.coingecko.com/api/v3/simple/price?ids=${ids}&vs_currencies=usd`)).json();
+      cgPricesAt = Date.now();
+    } catch (e) { cgPrices = cgPrices || {}; }
+  }
+  let v = Number(cgPrices?.[id]?.usd);
+  if (!(v > 0) && symbol) {
+    const j = await (await get(`https://api.coinbase.com/v2/prices/${symbol}-USD/spot`)).json();
+    v = Number(j?.data?.amount);
+  }
+  if (!(v > 0)) throw new Error(`price ${id} no data`);
+  return v;
+}
+
+/** Whole-market stats from CoinGecko /global: total market cap ($B) or BTC dominance (%). */
+let cgGlobal = null, cgGlobalAt = 0;
+export async function cryptoGlobal(what) {
+  if (!cgGlobal || Date.now() - cgGlobalAt > 5 * 60_000) {
+    cgGlobal = (await (await get("https://api.coingecko.com/api/v3/global")).json())?.data;
+    cgGlobalAt = Date.now();
+  }
+  const v = what === "mcap" ? cgGlobal?.total_market_cap?.usd / 1e9 : cgGlobal?.market_cap_percentage?.btc;
+  if (!(v > 0)) throw new Error(`global ${what} no data`);
+  return v;
+}
+
+/** Current air temperature (°C) in a city, from Open-Meteo (free, no key). ref = "lat,lon". */
+export async function cityTemp(ref) {
+  const [lat, lon] = String(ref).split(",");
+  const j = await (await get(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m`)).json();
+  const v = Number(j?.current?.temperature_2m);
+  if (!Number.isFinite(v)) throw new Error(`weather ${ref} no data`);
+  return v;
+}
+
 let twitchToken = null;
 async function twitchAuth() {
   const id = process.env.TWITCH_CLIENT_ID, secret = process.env.TWITCH_CLIENT_SECRET;
@@ -103,7 +143,9 @@ export async function twitchCategoryViewers(gameId) {
 }
 
 // cache so slow-moving sources aren't hammered every minute
-const TTL = { steam: 0, twitch: 0, github: 10 * 60_000, wiki: 60 * 60_000, narrative: 10 * 60_000, fng: 30 * 60_000, solana: 0 };
+const TTL = { steam: 0, twitch: 0, github: 10 * 60_000, wiki: 60 * 60_000, narrative: 10 * 60_000, fng: 30 * 60_000, solana: 0, price: 0, global: 0, weather: 10 * 60_000 };
+/** On-chain readings are positive integers: real value × 10^dec + off (off keeps temperatures positive). */
+export const toRaw = (m, v) => Math.round(v * 10 ** (m.dec || 0)) + (m.off || 0);
 const cache = new Map();
 export async function readSource(m) {
   const key = `${m.kind}:${m.ref}`;
@@ -116,6 +158,9 @@ export async function readSource(m) {
     : m.kind === "narrative" ? await coingeckoCategoryVolume(m.ref)
     : m.kind === "fng" ? await fearGreed()
     : m.kind === "solana" ? await solanaTps()
+    : m.kind === "price" ? toRaw(m, await coinPrice(m.ref, m.sym))
+    : m.kind === "global" ? toRaw(m, await cryptoGlobal(m.ref))
+    : m.kind === "weather" ? toRaw(m, await cityTemp(m.ref))
     : Promise.reject(new Error(`unknown source ${m.kind}`));
   cache.set(key, { v, t: Date.now() });
   return v;

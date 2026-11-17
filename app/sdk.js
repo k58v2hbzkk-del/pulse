@@ -24,6 +24,11 @@ const IX = {
   settle: [175, 42, 185, 87, 144, 131, 102, 212],
   init_index: [206, 236, 58, 58, 171, 221, 237, 57],
   set_feed: [79, 150, 2, 207, 41, 104, 77, 41],
+  create_prediction: [186, 30, 192, 149, 194, 124, 119, 37],
+  open_bet: [95, 107, 153, 81, 249, 90, 124, 56],
+  place_bet: [222, 62, 67, 220, 63, 166, 126, 33],
+  resolve_prediction: [199, 159, 54, 235, 121, 68, 53, 137],
+  claim_bet: [60, 61, 185, 215, 180, 119, 174, 126],
   create_duel: [49, 28, 93, 11, 75, 242, 69, 165],
   accept_duel: [80, 52, 90, 135, 172, 221, 175, 102],
   cancel_duel: [83, 124, 224, 237, 235, 44, 38, 57],
@@ -37,6 +42,8 @@ export const ACCT = {
   Position: [170, 188, 143, 228, 122, 64, 247, 208],
   Index: [140, 66, 194, 132, 78, 26, 135, 186],
   Duel: [126, 229, 210, 60, 177, 135, 124, 224],
+  Prediction: [98, 127, 141, 187, 218, 33, 8, 14],
+  Bet: [147, 23, 35, 59, 15, 75, 155, 32],
 };
 export const QUOTE_PROGRAM = new PublicKey("orac1eFjzWL5R3RbbdMV68K9H6TaCVVcL6LjvQQWAbz");
 export const SB_DEVNET_QUEUE = new PublicKey("EYiAmGSdsQTuCw413V5BzaruWuCCSDgTPtBGvLkXHbe7");
@@ -180,6 +187,43 @@ export const cancelDuelIx = (creator, duel) => ix([w(creator, true), w(duel)], d
 /** permissionless; for an unaccepted duel pass the creator as opponent */
 export const settleDuelIx = (duel, market, creator, opponent) =>
   ix([w(duel), w(market), r(indexPda(market)), w(creator), w(opponent)], data("settle_duel"));
+
+// ------------------------------------------------------------ PREDICT (Polymarket-style YES/NO)
+export const predPda = (market, creator, nonce) =>
+  pda([Buffer.from("pred"), market.toBuffer(), creator.toBuffer(), u64(nonce)]);
+export const betPda = (pred, owner) => pda([Buffer.from("bet"), pred.toBuffer(), owner.toBuffer()]);
+export const createPredictionIx = (creator, market, { nonce, above, target, deadline }) =>
+  ix([w(creator, true), r(market), w(predPda(market, creator, nonce)), r(SystemProgram.programId)],
+    data("create_prediction", u64(nonce), u8(above ? 1 : 0), u64(target), i64(deadline)));
+export const openBetIx = (owner, pred) =>
+  ix([w(owner, true), w(pred), w(betPda(pred, owner)), r(SystemProgram.programId)], data("open_bet"));
+export const placeBetIx = (owner, pred, yes, amount) =>
+  ix([w(owner, true), w(pred), w(betPda(pred, owner)), r(SystemProgram.programId)], data("place_bet", u8(yes ? 1 : 0), u64(amount)));
+export const resolvePredictionIx = (pred, market) =>
+  ix([w(pred), w(market), r(indexPda(market))], data("resolve_prediction"));
+export const claimBetIx = (pred, owner) => ix([w(pred), w(betPda(pred, owner)), w(owner)], data("claim_bet"));
+export const PRED_STATE = ["open", "yes", "no", "void"];
+export function decodePrediction(buf) {
+  const dv = view(buf);
+  return {
+    market: key(buf, 8), creator: key(buf, 40), nonce: rd64(dv, 72), target: rd64(dv, 80),
+    deadline: Number(dv.getBigInt64(88, true)), created: Number(dv.getBigInt64(96, true)),
+    yesPool: rd64(dv, 104), noPool: rd64(dv, 112), payoutPool: rd64(dv, 120), settledValue: rd64(dv, 128),
+    bettors: dv.getUint32(136, true), above: buf[140] === 1, state: buf[141],
+  };
+}
+export function decodeBet(buf) {
+  const dv = view(buf);
+  return { prediction: key(buf, 8), owner: key(buf, 40), yes: rd64(dv, 72), no: rd64(dv, 80) };
+}
+/** YES probability from the pools (0.5 when empty) */
+export const yesChance = (p) => { const t = p.yesPool + p.noPool; return t === 0n ? 0.5 : Number(p.yesPool) / Number(t); };
+/** What `amount` on a side would pay if that side wins, at the current pools (1% fee) */
+export function betPayout(p, yes, amount) {
+  const side = (yes ? p.yesPool : p.noPool) + amount;
+  const total = p.yesPool + p.noPool + amount;
+  return (amount * (total - (total * 100n) / 10_000n)) / side;
+}
 
 export const DUEL_STATE = ["open", "matched", "settled", "refunded"];
 export function decodeDuel(buf) {
