@@ -5,11 +5,11 @@ const RPC = new URLSearchParams(location.search).get("rpc") || "https://api.devn
 const DEMO = new URLSearchParams(location.search).has("demo");
 const conn = new Connection(RPC, "confirmed");
 const MARKET_IDS = [1, 2, 3, 4, 5];
-const USD = 1_000_000n;
+const SOL = 1_000_000_000n;
 
 const $ = (id) => document.getElementById(id);
 let wallet = null; // { publicKey, provider }
-let state = { markets: [], positions: new Map(), usd: 0n, sol: 0 };
+let state = { markets: [], positions: new Map(), sol: 0 };
 let openId = null;
 let busy = false;
 
@@ -52,7 +52,7 @@ function demoData() {
       const price = BigInt(Math.round(bases[k] * (1 + 0.08 * Math.sin(i / 18 + k) + 0.01 * Math.sin(i * 1.7 + k))));
       return { epoch: BigInt(i), price, longSp: P.SCALE, shortSp: P.SCALE, time: t };
     });
-    const lb = BigInt(800 + k * 300) * USD, sb = BigInt(1100 - k * 150) * USD;
+    const lb = BigInt(80 + k * 30) * SOL, sb = BigInt(110 - k * 15) * SOL;
     return {
       pk: P.marketPda(k + 1), m: { id: k + 1, name, leverage: k > 2 ? 5 : 3, active: true, price: hist.at(-1).price, lastUpdate: now - 20,
         epoch: 120n, longBalance: lb, shortBalance: sb, longShares: lb, shortShares: sb }, hist,
@@ -83,14 +83,12 @@ async function load() {
 
   if (wallet) {
     const posPks = markets.map((x) => P.positionPda(x.pk, wallet.publicKey));
-    const [posInfos, ata, sol] = await Promise.all([
+    const [posInfos, sol] = await Promise.all([
       conn.getMultipleAccountsInfo(posPks),
-      conn.getTokenAccountBalance(P.ataOf(wallet.publicKey)).catch(() => null),
       conn.getBalance(wallet.publicKey),
     ]);
     state.positions = new Map();
     posInfos.forEach((pi, i) => { if (pi) state.positions.set(markets[i].pk.toBase58(), P.decodePosition(pi.data)); });
-    state.usd = ata ? BigInt(ata.value.amount) : 0n;
     state.sol = sol / LAMPORTS_PER_SOL;
   }
 }
@@ -129,8 +127,8 @@ function render() {
     let mine = "";
     if (pv && (pv.longVal || pv.shortVal || pv.pos.pending)) {
       const parts = [];
-      if (pv.longVal) parts.push(`LONG $${P.fmtUsd(pv.longVal)}`);
-      if (pv.shortVal) parts.push(`SHORT $${P.fmtUsd(pv.shortVal)}`);
+      if (pv.longVal) parts.push(`LONG ${P.fmtSol(pv.longVal)} SOL`);
+      if (pv.shortVal) parts.push(`SHORT ${P.fmtSol(pv.shortVal)} SOL`);
       if (pv.pos.pending) parts.push(pv.ready ? "order filled" : `filling · ${pv.updatesLeft} update${pv.updatesLeft === 1 ? "" : "s"}`);
       mine = `<div class="mine">You: ${parts.join(" · ")}</div>`;
     }
@@ -139,7 +137,7 @@ function render() {
         <div><div class="mname">${x.m.name}</div><div class="msub">${x.m.leverage}x · updated ${ago(x.m.lastUpdate)}</div></div></div>
       <div class="mprice"><b>${fmtN(x.m.price)}</b><span class="u">players</span><span class="chg ${ch >= 0 ? "up" : "down"}">${ch >= 0 ? "+" : ""}${ch.toFixed(2)}%</span></div>
       ${chartSvg(vals.length > 1 ? vals : [first, first], 300, 70, "spark")}
-      <div class="mfoot"><span>Pools <b>$${P.fmtUsd(x.m.longBalance + x.m.shortBalance)}</b></span><span class="tbtn">Trade ›</span></div>
+      <div class="mfoot"><span>Pools <b>${P.fmtSol(x.m.longBalance + x.m.shortBalance)} SOL</b></span><span class="tbtn">Trade ›</span></div>
       <div class="pools"><i style="width:${(lb / tot) * 100}%;background:var(--up)"></i><i style="width:${(sb / tot) * 100}%;background:var(--down)"></i></div>
       ${mine}
     </button>`;
@@ -161,15 +159,15 @@ function renderSheet() {
   if (!wallet) action = `<button class="btn" style="width:100%;padding:15px;justify-content:center" id="sConnect">Connect wallet to trade</button>`;
   else {
     action = `
-      <div class="row" style="font-size:12px;color:var(--mute)"><span>Your test dollars: <b style="color:var(--text)">$${P.fmtUsd(state.usd)}</b></span>
-        <button class="btn ghost" id="faucet" style="padding:6px 10px;font-size:12px">Get test dollars</button></div>
-      <div class="amt"><input id="amt" inputmode="decimal" value="50" aria-label="Amount in test dollars" /></div>
-      <div class="chips">${[10, 50, 100, 500].map((v) => `<button data-v="${v}">$${v}</button>`).join("")}</div>
+      <div class="row" style="font-size:12px;color:var(--mute);display:flex;justify-content:space-between;align-items:center"><span>Your balance: <b style="color:var(--text)">${state.sol.toLocaleString(undefined, { maximumFractionDigits: 3 })} SOL</b></span>
+        <button class="btn ghost" id="faucet" style="padding:6px 10px;font-size:12px">Get free devnet SOL</button></div>
+      <div class="amt"><input id="amt" inputmode="decimal" value="0.1" aria-label="Amount in SOL" /></div>
+      <div class="chips">${[0.05, 0.1, 0.5, 1].map((v) => `<button data-v="${v}">${v} SOL</button>`).join("")}</div>
       <div class="trade"><button class="goLong" id="long" ${pending && !pv.ready ? "disabled" : ""}>Long ↑</button>
         <button class="goShort" id="short" ${pending && !pv.ready ? "disabled" : ""}>Short ↓</button></div>
       ${pv && (pv.longVal || pv.shortVal) ? `<div class="close2">
-        <button class="btn ghost" id="closeL" ${!pv.longVal || (pending && !pv.ready) ? "disabled" : ""}>Close long $${P.fmtUsd(pv.longVal)}</button>
-        <button class="btn ghost" id="closeS" ${!pv.shortVal || (pending && !pv.ready) ? "disabled" : ""}>Close short $${P.fmtUsd(pv.shortVal)}</button></div>` : ""}
+        <button class="btn ghost" id="closeL" ${!pv.longVal || (pending && !pv.ready) ? "disabled" : ""}>Close long ${P.fmtSol(pv.longVal)} SOL</button>
+        <button class="btn ghost" id="closeS" ${!pv.shortVal || (pending && !pv.ready) ? "disabled" : ""}>Close short ${P.fmtSol(pv.shortVal)} SOL</button></div>` : ""}
       ${pending ? `<p class="hint">${pv.ready ? "Your last order is filled. Your next action finishes it automatically (the keeper also does this for you)." : `Your order fills after ${pv.updatesLeft} more price update${pv.updatesLeft === 1 ? "" : "s"} (about ${pv.updatesLeft} min).`}</p>` : ""}`;
   }
   $("panel").innerHTML = `<div class="grab"></div>
@@ -180,14 +178,14 @@ function renderSheet() {
     <div class="stat">
       <div><span>If players +1%, longs earn</span><b class="up">+${(sens.longGain * 100).toFixed(2)}%</b></div>
       <div><span>If players −1%, shorts earn</span><b class="up">+${(sens.shortGain * 100).toFixed(2)}%</b></div>
-      <div><span>Long pool</span><b>$${P.fmtUsd(x.m.longBalance)}</b></div>
-      <div><span>Short pool</span><b>$${P.fmtUsd(x.m.shortBalance)}</b></div>
+      <div><span>Long pool</span><b>${P.fmtSol(x.m.longBalance)} SOL</b></div>
+      <div><span>Short pool</span><b>${P.fmtSol(x.m.shortBalance)} SOL</b></div>
     </div>
     ${action}
     <p class="hint">Losses are capped at what you put in. Winners are paid from the other side's pool, never from a house.</p>`;
   const bind = (id, fn) => { const el = $(id); if (el) el.onclick = fn; };
   bind("sConnect", connect);
-  bind("faucet", () => run(faucet));
+  bind("faucet", () => run(faucet, true));
   bind("long", () => run(() => trade(x, 0)));
   bind("short", () => run(() => trade(x, 1)));
   bind("closeL", () => run(() => closeSide(x, 0)));
@@ -234,15 +232,15 @@ async function ensureSol() {
     const sig = await conn.requestAirdrop(wallet.publicKey, 0.5 * LAMPORTS_PER_SOL);
     await conn.confirmTransaction(sig, "confirmed");
   } catch {
-    throw new Error(`You need a little devnet SOL for fees (free). Get it at <a href="https://faucet.solana.com" target="_blank">faucet.solana.com</a> for ${wallet.publicKey.toBase58().slice(0, 6)}…`);
+    throw new Error(`You need devnet SOL (free). Get it at <a href="https://faucet.solana.com" target="_blank">faucet.solana.com</a> for ${wallet.publicKey.toBase58().slice(0, 6)}…`);
   }
 }
 
-async function run(fn) {
+async function run(fn, skipSolCheck = false) {
   if (busy || DEMO) { if (DEMO) toast("Preview mode — connect on the live page to trade."); return; }
   busy = true;
   try {
-    await ensureSol();
+    if (!skipSolCheck) await ensureSol();
     const sig = await fn();
     toast(`Done ✓ <a href="https://explorer.solana.com/tx/${sig}?cluster=devnet" target="_blank">view</a>`);
     await refresh();
@@ -253,7 +251,14 @@ async function run(fn) {
 }
 
 async function faucet() {
-  return sendTx([P.createAtaIx(wallet.publicKey, wallet.publicKey), P.faucetIx(wallet.publicKey, 1000n * USD)]);
+  try {
+    const sig = await conn.requestAirdrop(wallet.publicKey, 1 * LAMPORTS_PER_SOL);
+    await conn.confirmTransaction(sig, "confirmed");
+    return sig;
+  } catch {
+    window.open("https://faucet.solana.com", "_blank");
+    throw new Error(`Devnet airdrop is busy. Opened faucet.solana.com — paste ${wallet.publicKey.toBase58().slice(0, 6)}… and pick devnet.`);
+  }
 }
 
 function preIxs(x) {
@@ -266,10 +271,10 @@ function preIxs(x) {
 
 async function trade(x, side) {
   const amt = Number($("amt").value);
-  if (!(amt >= 1)) throw new Error("Minimum is $1");
-  const base = BigInt(Math.round(amt * 1e6));
-  if (base > state.usd) throw new Error("Not enough test dollars — tap Get test dollars");
-  return sendTx([P.createAtaIx(wallet.publicKey, wallet.publicKey), ...preIxs(x), P.depositIx(wallet.publicKey, x.pk, side, base)]);
+  if (!(amt >= 0.01)) throw new Error("Minimum is 0.01 SOL");
+  const lamports = BigInt(Math.round(amt * 1e9));
+  if (amt + 0.01 > state.sol) throw new Error("Not enough SOL — tap Get free devnet SOL");
+  return sendTx([...preIxs(x), P.depositIx(wallet.publicKey, x.pk, side, lamports)]);
 }
 
 async function closeSide(x, side) {

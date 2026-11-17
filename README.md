@@ -18,7 +18,7 @@ Every perp DEX trades the same thing: token prices. Prediction markets trade yes
 
 ## How it works
 
-Each market has a **LONG pool** and a **SHORT pool**.
+Each market has a **LONG pool** and a **SHORT pool**, funded in SOL.
 
 1. A keeper posts the live index on-chain every minute (Steam's public player-count API).
 2. When the index moves, value flows **from the losing pool to the winning pool**, scaled by the market's leverage. The transfer is `x / (1 + x)` of the losing pool, where `x = leverage × |move|`: about linear for small moves, and never more than 100%, so a pool is never wiped out.
@@ -31,7 +31,7 @@ Winners are only ever paid from the other side's pool. No house, no LPs, no liqu
 
 ```
 programs/pulse/   Anchor program (Rust)
-  src/lib.rs      instructions: faucet, create_market, push_price, deposit, withdraw, settle
+  src/lib.rs      instructions: create_market, push_price, deposit, withdraw, settle
   src/math.rs     pool math + unit tests (solvency, conservation, never-wiped)
 app/              mobile-first web app (Phantom / Solflare / Backpack)
   sdk.js          hand-written client: PDAs, instruction encoding, account decoding
@@ -56,7 +56,7 @@ Program ID (devnet): `FEf5G58pDPipsFQJJzUTqHrnPkHaXqS2HABaU5Po9kTx`
 - More attention indexes: YouTube views, Wikipedia pageviews, GitHub stars, Twitch viewers
 - Permissionless market creation with a staked oracle
 - Prediction-market layer: dated "will X pass Y by Friday?" markets on the same data
-- Mainnet with real USDC
+- Mainnet with real SOL
 
 ## Run it
 

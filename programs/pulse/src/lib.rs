@@ -5,11 +5,13 @@
 //! winning pool with fixed leverage. No expiry, no liquidations, no liquidity providers,
 //! and the protocol can never owe more than traders deposited.
 //!
+//! Collateral is native SOL, held directly in each market account.
+//!
 //! Fair entry: orders are queued and filled at the share price recorded one full price
 //! update AFTER the update you ordered in, so nobody can trade on a number they already saw.
 
 use anchor_lang::prelude::*;
-use anchor_spl::token::{self, Mint, MintTo, Token, TokenAccount, Transfer};
+use anchor_spl::token::{self, Mint, MintTo, Token, TokenAccount};
 
 pub mod math;
 use math::*;
@@ -18,7 +20,7 @@ declare_id!("FEf5G58pDPipsFQJJzUTqHrnPkHaXqS2HABaU5Po9kTx");
 
 pub const HISTORY_LEN: usize = 240;
 pub const MAX_FAUCET: u64 = 1_000_000_000; // 1,000 test dollars per call
-pub const MIN_DEPOSIT: u64 = 1_000_000; // 1 test dollar
+pub const MIN_DEPOSIT: u64 = 10_000_000; // 0.01 SOL (lamports)
 pub const SIDE_LONG: u8 = 0;
 pub const SIDE_SHORT: u8 = 1;
 
@@ -175,13 +177,13 @@ pub mod pulse {
         require!(m.active, PulseError::Inactive);
         require!(!p.pending, PulseError::Pending);
 
-        token::transfer(
+        // collateral is native SOL, held directly in the market account
+        anchor_lang::system_program::transfer(
             CpiContext::new(
-                ctx.accounts.token_program.to_account_info(),
-                Transfer {
-                    from: ctx.accounts.user_ata.to_account_info(),
-                    to: ctx.accounts.vault.to_account_info(),
-                    authority: ctx.accounts.owner.to_account_info(),
+                ctx.accounts.system_program.to_account_info(),
+                anchor_lang::system_program::Transfer {
+                    from: ctx.accounts.owner.to_account_info(),
+                    to: m.to_account_info(),
                 },
             ),
             amount,
@@ -252,20 +254,8 @@ pub mod pulse {
         if usd > 0 {
             let pay = usd.min(m.reserved_payouts);
             m.reserved_payouts -= pay;
-            let id = m.id.to_le_bytes();
-            let seeds: &[&[u8]] = &[b"market", &id, &[m.bump]];
-            token::transfer(
-                CpiContext::new_with_signer(
-                    ctx.accounts.token_program.to_account_info(),
-                    Transfer {
-                        from: ctx.accounts.vault.to_account_info(),
-                        to: ctx.accounts.owner_ata.to_account_info(),
-                        authority: m.to_account_info(),
-                    },
-                    &[seeds],
-                ),
-                pay,
-            )?;
+            m.sub_lamports(pay)?;
+            ctx.accounts.owner.add_lamports(pay)?;
         }
         Ok(())
     }
@@ -274,20 +264,9 @@ pub mod pulse {
         let m = &mut ctx.accounts.market;
         let amt = m.fees;
         m.fees = 0;
-        let id = m.id.to_le_bytes();
-        let seeds: &[&[u8]] = &[b"market", &id, &[m.bump]];
-        token::transfer(
-            CpiContext::new_with_signer(
-                ctx.accounts.token_program.to_account_info(),
-                Transfer {
-                    from: ctx.accounts.vault.to_account_info(),
-                    to: ctx.accounts.admin_ata.to_account_info(),
-                    authority: m.to_account_info(),
-                },
-                &[seeds],
-            ),
-            amt,
-        )
+        m.sub_lamports(amt)?;
+        ctx.accounts.admin.add_lamports(amt)?;
+        Ok(())
     }
 }
 
@@ -442,6 +421,7 @@ pub struct OpenPosition<'info> {
 
 #[derive(Accounts)]
 pub struct Deposit<'info> {
+    #[account(mut)]
     pub owner: Signer<'info>,
     #[account(seeds = [b"config"], bump = config.bump)]
     pub config: Account<'info, Config>,
@@ -449,11 +429,7 @@ pub struct Deposit<'info> {
     pub market: Account<'info, Market>,
     #[account(mut, seeds = [b"position", market.key().as_ref(), owner.key().as_ref()], bump = position.bump, has_one = owner, has_one = market)]
     pub position: Account<'info, Position>,
-    #[account(mut, seeds = [b"vault", market.key().as_ref()], bump = market.vault_bump)]
-    pub vault: Account<'info, TokenAccount>,
-    #[account(mut, token::mint = config.mint, token::authority = owner)]
-    pub user_ata: Account<'info, TokenAccount>,
-    pub token_program: Program<'info, Token>,
+    pub system_program: Program<'info, System>,
 }
 
 #[derive(Accounts)]
@@ -474,25 +450,19 @@ pub struct Settle<'info> {
     pub history: AccountLoader<'info, History>,
     #[account(mut, seeds = [b"position", market.key().as_ref(), position.owner.as_ref()], bump = position.bump, has_one = market)]
     pub position: Account<'info, Position>,
-    #[account(mut, seeds = [b"vault", market.key().as_ref()], bump = market.vault_bump)]
-    pub vault: Account<'info, TokenAccount>,
-    #[account(mut, token::mint = config.mint, token::authority = position.owner)]
-    pub owner_ata: Account<'info, TokenAccount>,
-    pub token_program: Program<'info, Token>,
+    /// CHECK: receives SOL payouts; must be the position owner
+    #[account(mut, address = position.owner)]
+    pub owner: UncheckedAccount<'info>,
 }
 
 #[derive(Accounts)]
 pub struct CollectFees<'info> {
+    #[account(mut)]
     pub admin: Signer<'info>,
     #[account(seeds = [b"config"], bump = config.bump, has_one = admin)]
     pub config: Account<'info, Config>,
     #[account(mut)]
     pub market: Account<'info, Market>,
-    #[account(mut, seeds = [b"vault", market.key().as_ref()], bump = market.vault_bump)]
-    pub vault: Account<'info, TokenAccount>,
-    #[account(mut, token::mint = config.mint)]
-    pub admin_ata: Account<'info, TokenAccount>,
-    pub token_program: Program<'info, Token>,
 }
 
 // ---------------------------------------------------------------- events / errors
@@ -514,7 +484,7 @@ pub enum PulseError {
     Inactive,
     #[msg("You already have an order waiting to fill")]
     Pending,
-    #[msg("Minimum deposit is 1 test dollar")]
+    #[msg("Minimum deposit is 0.01 SOL")]
     TooSmall,
     #[msg("Not enough shares")]
     NotEnough,

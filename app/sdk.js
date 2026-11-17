@@ -95,16 +95,16 @@ export const pushPriceIx = (keeper, market, price) =>
 export const openPositionIx = (owner, market) =>
   ix([w(owner, true), r(market), w(positionPda(market, owner)), r(SystemProgram.programId)], data("open_position"));
 
+/** amount is in lamports (1 SOL = 1e9) */
 export const depositIx = (owner, market, side, amount) =>
-  ix([r(owner, true), r(configPda()), w(market), w(positionPda(market, owner)), w(vaultPda(market)), w(ataOf(owner)), r(TOKEN_PROGRAM)],
+  ix([w(owner, true), r(configPda()), w(market), w(positionPda(market, owner)), r(SystemProgram.programId)],
     data("deposit", u8(side), u64(amount)));
 
 export const withdrawIx = (owner, market, side, shares) =>
   ix([r(owner, true), w(market), w(positionPda(market, owner))], data("withdraw", u8(side), u128(shares)));
 
 export const settleIx = (market, owner) =>
-  ix([r(configPda()), w(market), r(historyPda(market)), w(positionPda(market, owner)), w(vaultPda(market)), w(ataOf(owner)), r(TOKEN_PROGRAM)],
-    data("settle"));
+  ix([r(configPda()), w(market), r(historyPda(market)), w(positionPda(market, owner)), w(owner)], data("settle"));
 
 // ------------------------------------------------------------ decoding
 const view = (buf) => new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
@@ -195,4 +195,6 @@ export function sensitivity(m) {
   return { longGain, shortGain };
 }
 
-export const fmtUsd = (base) => (Number(base) / 10 ** DECIMALS).toLocaleString(undefined, { maximumFractionDigits: 2 });
+export const LAMPORTS = 1_000_000_000n;
+/** lamports -> "1.234" SOL */
+export const fmtSol = (lamports) => (Number(lamports) / 1e9).toLocaleString(undefined, { maximumFractionDigits: 3 });
