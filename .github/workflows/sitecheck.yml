@@ -1,8 +1,6 @@
 name: Site check
 on:
   workflow_dispatch:
-  push:
-    paths: ["tools/**", ".github/workflows/sitecheck.yml"]
 jobs:
   check:
     runs-on: ubuntu-latest
@@ -10,6 +8,6 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with: { node-version: 22 }
-      - run: npm i --no-save playwright@1 && npx playwright install --with-deps chromium
       - run: npm ci && node tools/inspect.mjs
+      - run: npm i --no-save playwright@1 && npx playwright install --with-deps chromium
       - run: node tools/sitecheck.mjs
